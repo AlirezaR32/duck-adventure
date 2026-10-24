@@ -21,7 +21,10 @@ export default function GameCanvas() {
   const [muted, setMuted] = useState(false)
   const [flash, setFlash] = useState(false)
   const [hint, setHint] = useState(true)
+  const [tip, setTip] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seenTips = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -30,6 +33,13 @@ export default function GameCanvas() {
       onPrompt: (visible, label) =>
         setPrompt((p) => (p.visible === visible && p.label === label ? p : { visible, label })),
       onVictory: setWon,
+      onTip: (id) => {
+        if (seenTips.current.has(id)) return
+        seenTips.current.add(id)
+        setTip(id)
+        if (tipTimer.current) clearTimeout(tipTimer.current)
+        tipTimer.current = setTimeout(() => setTip(null), 4200)
+      },
       onFlash: () => {
         setFlash(true)
         if (flashTimer.current) clearTimeout(flashTimer.current)
@@ -41,6 +51,7 @@ export default function GameCanvas() {
     return () => {
       clearTimeout(hintTimer)
       if (flashTimer.current) clearTimeout(flashTimer.current)
+      if (tipTimer.current) clearTimeout(tipTimer.current)
       g.dispose()
     }
   }, [])
@@ -138,9 +149,18 @@ export default function GameCanvas() {
         className={`pointer-events-none absolute inset-x-0 top-16 flex justify-center transition-opacity duration-1000 ${hint ? 'opacity-100' : 'opacity-0'}`}
       >
         <div className="rounded-full bg-white/80 px-4 py-2 text-xs font-semibold text-stone-500 shadow-sm">
-          Hold arrows to run · JUMP to hop · GRAB the swing
+          Run with the arrows · JUMP the gap · GRAB the swing!
         </div>
       </div>
+
+      {/* one-shot teaching tips */}
+      {tip === 'pump' && (
+        <div className="pointer-events-none absolute inset-x-0 top-28 flex justify-center">
+          <div className="animate-bounce rounded-full bg-orange-400/95 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-orange-900/20">
+            Rock ← → to swing higher — release at the top!
+          </div>
+        </div>
+      )}
 
       {/* victory overlay */}
       {won && (
@@ -148,7 +168,7 @@ export default function GameCanvas() {
           <div className="w-[min(20rem,86vw)] rounded-3xl bg-white/95 p-6 text-center shadow-2xl">
             <div className="text-xl font-extrabold text-stone-700">Level complete!</div>
             <p className="mt-2 text-sm text-stone-500">
-              The duck cleared the V0 test course — run, jumps, obstacle and the big swing.
+              The duck swung across the whole meadow — grab, pump, release, repeat!
             </p>
             <button
               className="mt-5 w-full rounded-2xl bg-orange-400 py-3 text-sm font-extrabold tracking-wide text-white shadow-lg shadow-orange-900/20 active:scale-95 active:bg-orange-500 transition"

@@ -1,16 +1,30 @@
 /**
- * Project Duck — the swing (Phase 6 proof of concept).
+ * Project Duck — the swing (V0.2).
  *
- * One stable pivot, two visible ropes, one seat, controlled pendulum motion.
- * Ropes are plain cylinders re-anchored every frame from pivot to seat —
- * no rope simulation, as specified.
+ * A classic playground A-frame: two angled legs per side (readable "A"
+ * silhouette from the gameplay camera), a top bar, two ropes and a wooden
+ * seat. The pendulum is analytically integrated (stable, damped, pumpable).
+ *
+ * V0.2 additions:
+ *  - forgiving grab feedback: a pulsing ring appears around the seat when
+ *    the duck is in range (setInRange) and the seat does a happy bump on grab
+ *  - idle breeze sway so unattended swings feel alive
+ *  - per-instance colors/length so the level can have multiple swings
  */
 
 import * as THREE from 'three'
 
-const WOOD = 0xd9a05b
-const WOOD_DARK = 0xc4884a
-const ROPE = 0x3a3330
+export interface SwingCfg {
+  x: number
+  baseY: number // ground/platform top under the frame
+  L: number // rope length
+  pivotH: number // pivot height above baseY
+  wood?: number
+  woodDark?: number
+  rope?: number
+}
+
+const UP = new THREE.Vector3(0, 1, 0)
 
 function flatMat(color: number): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, flatShading: true })
@@ -31,12 +45,10 @@ export function roundedBoxGeo(w: number, h: number, d: number, r: number): THREE
   s.quadraticCurveTo(x, y + h, x, y + h - rr)
   s.lineTo(x, y + rr)
   s.quadraticCurveTo(x, y, x + rr, y)
-  const geo = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, curveSegments: 3 })
+  const geo = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false, curveSegments: 4 })
   geo.translate(0, 0, -d / 2)
   return geo
 }
-
-const UP = new THREE.Vector3(0, 1, 0)
 
 export class Swing {
   readonly group = new THREE.Group()
@@ -48,62 +60,87 @@ export class Swing {
   omega = 0 // angular velocity (rad/s)
 
   private seat = new THREE.Group()
+  private ring: THREE.Mesh
+  private ringVisible = false
   private ropes: THREE.Mesh[] = []
-  private anchorZ = [0.34, -0.34]
+  private anchorZ = [0.4, -0.4]
+  private phase: number
+  private bumpT = 0
 
-  constructor(x: number, groundY: number) {
-    this.pivotX = x
-    this.L = 3.1
-    this.pivotY = groundY + 3.55 // seat rests at groundY + 0.45
+  constructor(cfg: SwingCfg) {
+    this.pivotX = cfg.x
+    this.L = cfg.L
+    this.pivotY = cfg.baseY + cfg.pivotH
+    this.phase = cfg.x * 1.7
 
-    const wood = flatMat(WOOD)
-    const woodDark = flatMat(WOOD_DARK)
-    const ropeMat = new THREE.MeshStandardMaterial({ color: ROPE, roughness: 0.7, metalness: 0 })
+    const wood = flatMat(cfg.wood ?? 0xd9a05b)
+    const woodDark = flatMat(cfg.woodDark ?? 0xb97f45)
+    const ropeMat = new THREE.MeshStandardMaterial({
+      color: cfg.rope ?? 0x8a6a4a,
+      roughness: 0.75,
+      metalness: 0,
+    })
 
-    // A-frame posts (front/back in z, so the side view stays readable)
-    const postH = this.pivotY - groundY
-    for (const zs of [0.95, -0.95]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, postH, 8), wood)
-      post.position.set(this.pivotX, groundY + postH / 2, zs)
-      post.castShadow = true
-      this.group.add(post)
-      // foot pad
-      const foot = new THREE.Mesh(roundedBoxGeo(0.5, 0.16, 0.4, 0.07), woodDark)
-      foot.position.set(this.pivotX, groundY + 0.08, zs)
-      foot.castShadow = true
-      this.group.add(foot)
+    // ---- A-frame: two angled legs per side, classic playground look ----
+    const legLen = Math.hypot(1.18, cfg.pivotH)
+    const legAngle = Math.asin(1.18 / legLen)
+    for (const zs of [0.8, -0.8]) {
+      for (const s of [1, -1]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.095, legLen, 8), wood)
+        leg.position.set(cfg.x + (s * 1.18) / 2, cfg.baseY + cfg.pivotH / 2, zs)
+        leg.rotation.z = s * legAngle
+        leg.castShadow = true
+        this.group.add(leg)
+        // rounded foot pad
+        const foot = new THREE.Mesh(roundedBoxGeo(0.42, 0.14, 0.34, 0.06), woodDark)
+        foot.position.set(cfg.x + s * 1.18, cfg.baseY + 0.07, zs)
+        foot.castShadow = true
+        this.group.add(foot)
+      }
     }
 
-    // top bar
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 2.1, 8), wood)
+    // top bar + end caps + little collars where ropes attach
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.05, 10), wood)
     bar.rotation.x = Math.PI / 2
-    bar.position.set(this.pivotX, this.pivotY, 0)
+    bar.position.set(cfg.x, this.pivotY, 0)
     bar.castShadow = true
     this.group.add(bar)
-    for (const zs of [1.05, -1.05]) {
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.095, 8, 6), woodDark)
-      cap.position.set(this.pivotX, this.pivotY, zs)
+    for (const zs of [1.02, -1.02]) {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), woodDark)
+      cap.position.set(cfg.x, this.pivotY, zs)
       this.group.add(cap)
     }
 
-    // two ropes (thin cylinders, re-anchored each frame)
-    const ropeGeo = new THREE.CylinderGeometry(0.024, 0.024, 1, 6)
+    // ---- ropes ----
+    const ropeGeo = new THREE.CylinderGeometry(0.028, 0.028, 1, 7)
     for (let i = 0; i < 2; i++) {
       const rope = new THREE.Mesh(ropeGeo, ropeMat)
       this.ropes.push(rope)
       this.group.add(rope)
     }
 
-    // seat
-    const seatBoard = new THREE.Mesh(roundedBoxGeo(0.8, 0.1, 0.52, 0.045), woodDark)
-    seatBoard.castShadow = true
-    this.seat.add(seatBoard)
+    // ---- seat ----
+    const board = new THREE.Mesh(roundedBoxGeo(0.88, 0.11, 0.56, 0.05), woodDark)
+    board.castShadow = true
+    this.seat.add(board)
+    // subtle plank groove + rope knots
+    const groove = new THREE.Mesh(roundedBoxGeo(0.7, 0.024, 0.06, 0.01), wood)
+    groove.position.set(0, 0.056, 0)
+    this.seat.add(groove)
     for (const zs of this.anchorZ) {
-      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), ropeMat)
-      knot.position.set(0, 0.02, zs)
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), ropeMat)
+      knot.position.set(0, 0.03, zs)
       this.seat.add(knot)
     }
     this.group.add(this.seat)
+
+    // ---- grab range indicator (facing the camera) ----
+    this.ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.56, 0.034, 8, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffb340, transparent: true, opacity: 0.7, fog: false }),
+    )
+    this.ring.visible = false
+    this.group.add(this.ring)
 
     this.place()
   }
@@ -112,15 +149,16 @@ export class Swing {
   update(dt: number, pump: number, gravity: number): void {
     const torque = pump * 2.0
     this.omega += (-(gravity / this.L) * Math.sin(this.theta) - 0.22 * this.omega + torque) * dt
-    this.omega = Math.max(-4.2, Math.min(4.2, this.omega))
+    this.omega = Math.max(-4.4, Math.min(4.4, this.omega))
     this.theta += this.omega * dt
-    this.theta = Math.max(-1.35, Math.min(1.35, this.theta))
+    this.theta = Math.max(-1.38, Math.min(1.38, this.theta))
     this.place()
   }
 
-  /** Free-hanging settle (damped) while nobody is on it. */
-  settle(dt: number): void {
-    this.omega += (-(30 / this.L) * Math.sin(this.theta) - 1.4 * this.omega) * dt
+  /** Free-hanging settle (damped) + a whisper of breeze while unattended. */
+  settle(dt: number, t: number): void {
+    const breeze = Math.abs(this.omega) < 0.35 ? Math.sin(t * 0.9 + this.phase) * 0.045 : 0
+    this.omega += (-(30 / this.L) * Math.sin(this.theta) - 1.4 * this.omega + breeze) * dt
     this.theta += this.omega * dt
     this.place()
   }
@@ -141,6 +179,35 @@ export class Swing {
       rope.scale.set(1, len, 1)
       rope.quaternion.setFromUnitVectors(UP, dir.normalize())
     }
+  }
+
+  /** Called every render frame: ring pulse + grab bump. */
+  tickVisual(dt: number, t: number): void {
+    if (this.ringVisible) {
+      const p = 1 + Math.sin(t * 5.4) * 0.1
+      this.ring.scale.set(p, p, 1)
+      const m = this.ring.material as THREE.MeshBasicMaterial
+      m.opacity = 0.62 + Math.sin(t * 5.4) * 0.22
+    }
+    this.ring.position.set(this.seat.position.x, this.seat.position.y + 0.02, 0.3)
+    if (this.bumpT > 0) {
+      this.bumpT = Math.max(0, this.bumpT - dt * 3.2)
+      const s = 1 + Math.sin(this.bumpT * Math.PI) * 0.16
+      this.seat.scale.set(s, 2 - s, s)
+    }
+  }
+
+  /** Show/hide the "you can grab this" ring. */
+  setInRange(v: boolean): void {
+    if (this.ringVisible !== v) {
+      this.ringVisible = v
+      this.ring.visible = v
+    }
+  }
+
+  /** Happy seat bump when grabbed. */
+  bump(): void {
+    this.bumpT = 1
   }
 
   /** Seat center position (duck sits on top of this). */

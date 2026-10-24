@@ -81,7 +81,10 @@ export class PhysicsWorld {
       if (sdx !== 0) {
         b.x += sdx
         for (const box of this.boxes) {
-          if (this.overlaps(b.x, b.y, b.hw, b.hh, box)) {
+          // corner forgiveness: when the feet are within a step of a box's
+          // top surface, don't treat it as a wall — the y pass will seat the
+          // body on top. Prevents permanent jams on ledge corners.
+          if (b.y - b.hh < box.cy + box.hh - 0.04 && this.overlaps(b.x, b.y, b.hw, b.hh, box)) {
             b.x = sdx > 0 ? box.cx - box.hw - b.hw : box.cx + box.hw + b.hw
             hitX = true
           }
@@ -109,8 +112,17 @@ export class PhysicsWorld {
     if (headBump && b.vy > 0) b.vy = 0
 
     // Belt-and-suspenders ground probe for the resting-on-floor case.
-    if (!b.onGround && sdy <= 0 && this.groundBelow(b) !== null) {
-      b.onGround = true
+    // It can catch the final approach one step BEFORE the collision sweep
+    // would, so it must snap to the surface AND emit the landing event —
+    // otherwise landings are silently eaten (no dust, no sfx, no checkpoint).
+    if (!b.onGround && sdy <= 0) {
+      const top = this.groundBelow(b)
+      if (top !== null) {
+        b.y = top + b.hh
+        b.vy = 0
+        b.onGround = true
+        if (!wasOnGround) landed = true
+      }
     }
 
     return { hitX, landed, headBump }

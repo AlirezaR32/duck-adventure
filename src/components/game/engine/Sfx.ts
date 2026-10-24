@@ -87,6 +87,11 @@ export class Sfx {
   grab(): void {
     this.tone({ f0: 520, f1: 330, dur: 0.1, type: 'triangle', vol: 0.16 })
   }
+  /** Bright little chime for pickups/grab confirmation. */
+  sparkle(): void {
+    this.tone({ f0: 880, f1: 1320, dur: 0.08, type: 'sine', vol: 0.07 })
+    this.tone({ f0: 1320, f1: 1760, dur: 0.1, type: 'sine', vol: 0.055, delay: 0.05 })
+  }
   release(): void {
     this.noise(0.24, 0.13, 500, 2400)
   }
