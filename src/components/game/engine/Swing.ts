@@ -306,4 +306,15 @@ export class Swing {
   angleFrom(px: number, py: number): number {
     return Math.atan2(px - this.pivotX, this.pivotY - py)
   }
+
+  /** Release GPU resources when a level is unloaded. */
+  dispose(): void {
+    this.group.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (mesh.geometry) mesh.geometry.dispose()
+      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+      else if (mat) mat.dispose()
+    })
+  }
 }

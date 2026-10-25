@@ -94,3 +94,29 @@ Stage Summary:
 - Key decisions: physics untouched by design (preserve V0.4 behavior); visual-only sit-sink offset so collider/release trajectories stay identical; DOM-guarded shadow texture keeps GLB export working
 - Artifacts: download/screens/v5-00..v5-20 (17 QA shots), download/duck.glb v3, README V0.5
 - Not done (honest): Android device testing; far-wing micro-offset; no env changes (V0.4 world kept as-is per "polish without expanding scope")
+
+---
+Task ID: 5
+Agent: main (Z.ai)
+Task: Project Duck V0.6 — complete level design, advanced swing challenges & game feel
+
+Work Log:
+- Audited repo first (per spec): git a61cdbf V0.5 baseline confirmed real (9-swing route, checkpoints, stars, collectible-figure duck); mapped V0.6 gaps: hard-coded level, one level, no movers, single-save progression
+- Physics.ts: moving platforms — MotionDef/addMoving/updateMotions (sinusoidal, one axis, advanced once per fixed step before bodies) + Body.carrier (duck rides the platform's exact delta, deterministic); world.reset() for level switches
+- LevelKit.ts (new): reusable builders extracted from the old Level.ts — island/pedestal/movingPlatform/checkpointPost/star/finishFlag/finishArch/startSign + decor (tree, bush, flower, bigFlower, mushroom, crystal, rock, lantern, waterfall, floatingRock) + 3 themes (meadow/isles/canyon); everything under one root group, disposed via traverse
+- levels.ts (new): 3 data-driven LevelDefs — L1 Meadow Swing (teaching hop, 2 swings, 1 cp, 5 stars), L2 Floating Isles (climb, long vine, V0.4-verified 8.6u chain pair S3->S4, climb finish, 2 cps, 7 stars), L3 Crystal Canyon (elevated swing, M1 ferry slab, long vine, pre-finale checkpoint, M2 elevator to the spire, grand finale, 2 cps, 6 stars)
+- Level.ts rewritten as buildLevelRuntime(def): instantiates under one root, update(t), dispose() frees all geo/mat; exports LevelHandle
+- Game.ts: multi-level lifecycle — loadLevel(i) tears down level+swings+physics+progression+input and rebuilds (single Game instance, no duplicate handlers); movers stepped in the sim loop; per-level plats/checkpoints/flagX/spawn/killY/levelTime; victory payload {stars,total,levelIndex,levelName,time}; debug hook +loadLevel, state() +level/movers/moverX/moverTop/swingX; Swing.dispose() added
+- GameCanvas.tsx: save v2 (unlocked + per-level completed/bestStars/bestTime, duck-save-v2); level chip + picker panel with locks/best stars; intro cards; completion flow (NEXT LEVEL / RETRY LEVEL / ALL LEVELS COMPLETE + PLAY AGAIN); star HUD per level; touch UI preserved
+- Background.ts: themeable — applyTheme() rebuilds sky gradient/fog/hill rings/cloud sea/sun per level with disposal (meadow/isles/canyon palettes)
+- scripts/game-tests-v6.js: 9 deterministic scenarios + l3 state-machine driver (CLI-eval-safe); all PASS: l1_full(5/5 stars, won), l1_checkpoint, l2_full(won), l2_chain(MID-AIR, swingX verified), l3_movers(carry asserted), l3_checkpoint, l3_part1+l3_drive(won), crossLevel(both directions + same-level reload clean), resetLoop(6x, no NaN)
+- BUGS FOUND & FIXED via testing: (1) hard releases re-grabbed the old swing mid-flight — regrab cooldown now scales with release speed (0.24s + up to 0.55s), the L2 chain became reliable; (2) L3 spire jump was blind from the elevator center — spire moved 0.6u closer + ride walks to the slab edge first; (3) L1 teaching hop 0.01u short — island moved 0.5u closer; (4) L3 checkpoint test fell onto the elevator corner (right edge catches) — respawn test uses the left gap
+- Reachability tuning loop: every transition verified with the sim harness; release windows >= 0.3 rad; catch platforms widened where marginal (L3 P5 46.4)
+- Visual QA: 10 screenshots (L1 meadow idle/swinging, L2 isles, L3 canyon+ferry mid-ride+swing sit, level picker, completion, ALL COMPLETE, mobile 390x844); touch buttons verified by simulated taps (jump launched duck, right moved duck); fresh reload console clean; ESLint clean
+- README rewritten to V0.6 (level table, architecture, tests, Android path, limitations)
+
+Stage Summary:
+- Deliverable: V0.6 at / — three complete verified levels (Meadow Swing / Floating Isles / Crystal Canyon) with moving platforms, unlock progression, per-level star/time records, full completion flow; duck model/animation and core swing physics preserved from V0.5
+- Key decisions: levels as pure data + builder kit (level 4 = one new def); physics carrier for movers (deterministic under fixed timestep); momentum-scaled regrab cooldown (fixes mid-flight re-grab, enables chains); single Game instance across levels (no handler duplication)
+- Artifacts: download/screens/v6-01..v6-10 (10 QA shots), scripts/game-tests-v6.js, README V0.6
+- Not done (honest): human playtesting (sim + screenshots only), Android device testing, music

@@ -5,6 +5,11 @@
  * with axis-separated sweep + substepping so it can never tunnel through
  * ordinary platforms, and landing is detected explicitly.
  *
+ * V0.6: moving platforms. A box can carry a sinusoidal motion on one axis;
+ * the world advances every motion once per fixed step (updateMotions) and
+ * bodies standing on a mover are carried by its exact delta, so rides are
+ * deterministic under the fixed timestep.
+ *
  * Collision geometry is fully independent of the visual squash & stretch:
  * this module never sees animation data.
  */
@@ -24,6 +29,27 @@ export interface Body {
   vx: number
   vy: number
   onGround: boolean
+  /** Box the body is standing on this step (used to ride moving platforms). */
+  carrier: Box | null
+}
+
+/** Sinusoidal motion for a moving platform (one axis). */
+export interface Motion {
+  axis: 'x' | 'y'
+  base: number
+  amp: number
+  speed: number
+  phase: number
+  /** Delta the box moved during the latest updateMotions() call. */
+  dx: number
+  dy: number
+}
+
+export interface MotionDef {
+  axis: 'x' | 'y'
+  amp: number
+  speed: number
+  phase: number
 }
 
 export interface MoveResult {
@@ -38,11 +64,61 @@ const GROUND_PROBE = 0.09
 
 export class PhysicsWorld {
   readonly boxes: Box[] = []
+  private motions = new Map<Box, Motion>()
 
   add(cx: number, cy: number, w: number, h: number): Box {
     const b: Box = { cx, cy, hw: w / 2, hh: h / 2 }
     this.boxes.push(b)
     return b
+  }
+
+  /** Register a moving platform (sinusoidal on one axis around its center). */
+  addMoving(cx: number, cy: number, w: number, h: number, def: MotionDef): Box {
+    const box = this.add(cx, cy, w, h)
+    this.motions.set(box, {
+      axis: def.axis,
+      base: def.axis === 'x' ? cx : cy,
+      amp: def.amp,
+      speed: def.speed,
+      phase: def.phase,
+      dx: 0,
+      dy: 0,
+    })
+    return box
+  }
+
+  motionOf(box: Box): Motion | undefined {
+    return this.motions.get(box)
+  }
+
+  get motionCount(): number {
+    return this.motions.size
+  }
+
+  /**
+   * Advance every moving platform to time t (seconds). Call exactly once
+   * per fixed sim step, BEFORE bodies are moved; carried bodies then get
+   * shifted by the stored delta.
+   */
+  updateMotions(t: number): void {
+    for (const [box, m] of this.motions) {
+      const v = m.base + m.amp * Math.sin(t * m.speed + m.phase)
+      if (m.axis === 'x') {
+        m.dx = v - box.cx
+        m.dy = 0
+        box.cx = v
+      } else {
+        m.dy = v - box.cy
+        m.dx = 0
+        box.cy = v
+      }
+    }
+  }
+
+  /** Remove every box and motion (level switch). */
+  reset(): void {
+    this.boxes.length = 0
+    this.motions.clear()
   }
 
   private overlaps(x: number, y: number, hw: number, hh: number, b: Box): boolean {
@@ -76,6 +152,7 @@ export class PhysicsWorld {
     let landed = false
     let headBump = false
     b.onGround = false
+    b.carrier = null
 
     for (let i = 0; i < steps; i++) {
       if (sdx !== 0) {
@@ -97,6 +174,7 @@ export class PhysicsWorld {
             if (sdy < 0) {
               b.y = box.cy + box.hh + b.hh
               b.onGround = true
+              b.carrier = box
               if (!wasOnGround) landed = true
             } else {
               b.y = box.cy - box.hh - b.hh
@@ -121,10 +199,23 @@ export class PhysicsWorld {
         b.y = top + b.hh
         b.vy = 0
         b.onGround = true
+        b.carrier = this.carrierBelow(b)
         if (!wasOnGround) landed = true
       }
     }
 
     return { hitX, landed, headBump }
+  }
+
+  /** The box directly under a resting body (matching groundBelow's pick). */
+  private carrierBelow(b: Body): Box | null {
+    for (const box of this.boxes) {
+      if (Math.abs(b.x - box.cx) < b.hw + box.hw - 0.02) {
+        const top = box.cy + box.hh
+        const gap = b.y - b.hh - top
+        if (gap >= -0.02 && gap <= GROUND_PROBE) return box
+      }
+    }
+    return null
   }
 }

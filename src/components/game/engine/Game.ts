@@ -1,9 +1,9 @@
 /**
- * Project Duck — game orchestrator (V0.4, chainable swings + progression).
+ * Project Duck — game orchestrator (V0.6, multi-level).
  *
  * Fixed-timestep simulation (1/60) with an accumulator. The duck is a
  * kinematic body: gravity, jump with anticipation, coyote time and jump
- * buffering. Swinging is the star — and V0.4 makes it a CHAIN:
+ * buffering. Swinging is the star — grab, pump, release, fly, land:
  *
  *  - every swing is independent (own pivot, length, damping, grab range)
  *  - release preserves the pendulum's tangential momentum
@@ -11,18 +11,23 @@
  *    re-attaches, while any OTHER swing in range can be grabbed instantly
  *  - explicit checkpoint posts activate as you pass them; respawning resets
  *    physics, swing attachments and input safely (never mid-air stale state)
+ *  - moving platforms carry the duck via the physics carrier (deterministic)
  *
- * Progression is lightweight: optional stars along the arcs, a completion
- * screen with the star count, and best-progress persisted by the UI layer.
+ * V0.6 adds a reusable level system: levels are data (levels.ts) built by
+ * buildLevelRuntime; loadLevel() tears the previous level down completely
+ * (scene objects, physics boxes, swings, progression) so repeated switches
+ * and restarts can never leak stale state. One Game instance serves the
+ * whole session — input handlers and the RAF loop are never duplicated.
  */
 
 import * as THREE from 'three'
-import { PhysicsWorld, type Body } from './Physics'
+import { PhysicsWorld, type Body, type Box } from './Physics'
 import { InputState, type InputName } from './Input'
 import { Duck } from './Duck'
 import { Swing } from './Swing'
 import { Background } from './Background'
-import { buildLevel, SWINGS, FLAG_X, SPAWN, KILL_Y, CHECKPOINTS, PLATFORMS, type LevelHandle } from './Level'
+import { buildLevelRuntime, type LevelHandle } from './Level'
+import { LEVELS, type CheckpointDef, type LevelDef, type PlatDef } from './levels'
 import { Sfx } from './Sfx'
 
 const T = {
@@ -57,6 +62,10 @@ function clamp(v: number, lo: number, hi: number): number {
 export interface RunStats {
   stars: number
   starsTotal: number
+  levelIndex: number
+  levelName: string
+  /** Seconds from level start to the flag (fixed-step clock). */
+  time: number
 }
 
 export interface GameCallbacks {
@@ -68,6 +77,8 @@ export interface GameCallbacks {
   /** Lightweight progression events for HUD counters. */
   onStars(count: number, total: number): void
   onCheckpoint(index: number, total: number): void
+  /** Fired after a level finished loading (also on construction). */
+  onLevelStart(index: number, def: LevelDef): void
 }
 
 interface DebugApi {
@@ -82,6 +93,8 @@ interface DebugApi {
   place(x: number, y: number): void
   /** Deterministic testing: advance exactly n fixed sim steps (visuals kept coherent). */
   sim(n: number): void
+  /** Load a level by index (used by the UI and the test harness). */
+  loadLevel(i: number): void
   state(): Record<string, number | boolean>
 }
 
@@ -110,7 +123,17 @@ export class Game {
   private swings: Swing[] = []
   private activeSwing: Swing | null = null
   private bg: Background
-  private level: LevelHandle
+  /** Built in the constructor via loadLevel() before the first tick. */
+  private level!: LevelHandle
+  private levelIdx = 0
+  private def: LevelDef = LEVELS[0]
+  private plats: PlatDef[] = []
+  private checkpoints: CheckpointDef[] = []
+  private flagX = 0
+  private spawnX = 0.4
+  private killY = -8
+  private moverBoxes: Box[] = []
+  private levelTime = 0
   private dirLight: THREE.DirectionalLight
 
   private body: Body
@@ -135,7 +158,7 @@ export class Game {
   private confettiGeo = new THREE.OctahedronGeometry(0.05, 0)
   private confettiColors = [0xffb65c, 0xff8ba0, 0x9fd8e8, 0xb4e97c, 0xffd166]
 
-  private camX = SPAWN.x
+  private camX = 0.4
   private camY = 1.0
   private camZ = 11
   private camZCur = 11
@@ -151,7 +174,7 @@ export class Game {
   private onBlur = () => this.input.clearAll()
   private onResize = () => this.resize()
 
-  constructor(canvas: HTMLCanvasElement, cb: GameCallbacks) {
+  constructor(canvas: HTMLCanvasElement, cb: GameCallbacks, startLevel = 0) {
     this.canvas = canvas
     this.cb = cb
 
@@ -181,24 +204,21 @@ export class Game {
 
     // ---- world ----
     this.bg = new Background(this.scene)
-    this.level = buildLevel(this.scene, this.world)
-    for (const cfg of SWINGS) {
-      const s = new Swing(cfg)
-      this.swings.push(s)
-      this.scene.add(s.group)
-    }
     this.scene.add(this.duck.root)
     this.scene.add(this.duck.shadowMesh)
 
     this.body = {
-      x: SPAWN.x,
+      x: 0.4,
       y: T.colliderH / 2,
       hw: T.colliderW / 2,
       hh: T.colliderH / 2,
       vx: 0,
       vy: 0,
       onGround: false,
+      carrier: null,
     }
+
+    this.loadLevel(startLevel)
 
     // ---- events ----
     window.addEventListener('keydown', this.onKeyDown)
@@ -212,6 +232,80 @@ export class Game {
     // ---- loop ----
     this.lastT = performance.now()
     this.raf = requestAnimationFrame(this.tick)
+  }
+
+  // ============================ level lifecycle ============================
+
+  /** Tear the current level down completely, then build level `idx` fresh. */
+  loadLevel(idx: number): void {
+    const i = Math.max(0, Math.min(LEVELS.length - 1, Math.floor(idx)))
+    this.levelIdx = i
+    const def = LEVELS[i]
+    this.def = def
+
+    // ---- teardown: scene objects, swings, physics ----
+    if (this.level) this.level.dispose()
+    for (const s of this.swings) {
+      this.scene.remove(s.group)
+      s.dispose()
+    }
+    this.swings = []
+    this.world.reset()
+
+    // ---- build ----
+    this.level = buildLevelRuntime(this.scene, this.world, def)
+    for (const cfg of def.swings) {
+      const s = new Swing(cfg)
+      this.swings.push(s)
+      this.scene.add(s.group)
+    }
+    this.moverBoxes = this.world.boxes.filter((b) => this.world.motionOf(b) !== undefined)
+
+    // ---- per-level play state (no stale forces, attachments or counters) ----
+    this.plats = def.platforms
+    this.checkpoints = def.checkpoints
+    this.flagX = def.flagX
+    this.spawnX = def.spawnX
+    this.killY = def.killY
+    this.levelTime = 0
+    this.cpIndex = -1
+    this.starsGot = 0
+    this.tipSent = { pump: false, star: false }
+    this.clearConfetti()
+    this.won = false
+    this.hopTimer = 0
+    this.swinging = false
+    this.activeSwing = null
+    this.regrabSwing = null
+    this.regrabT = 0
+    this.whooshT = 0
+    this.debugRelease = null
+    this.input.clearAll()
+
+    const b = this.body
+    b.x = def.spawnX
+    b.y = T.colliderH / 2
+    b.vx = 0
+    b.vy = 0
+    b.onGround = false
+    b.carrier = null
+    this.duck.facing = 1
+    this.camX = def.spawnX
+    this.camY = 1.0
+    this.smVx = 0
+
+    this.bg.applyTheme(def.theme)
+    this.cb.onStars(0, def.stars.length)
+    this.cb.onVictory(false)
+    this.cb.onLevelStart(i, def)
+  }
+
+  private clearConfetti(): void {
+    for (const p of this.confetti) {
+      this.scene.remove(p.mesh)
+      ;(p.mesh.material as THREE.Material).dispose()
+    }
+    this.confetti = []
   }
 
   // ============================ main loop ============================
@@ -239,7 +333,18 @@ export class Game {
 
   private step(dt: number): void {
     this.time += dt
+    // moving platforms advance once per fixed step, before anything moves;
+    // a grounded duck then rides its carrier by the platform's exact delta
+    this.world.updateMotions(this.time)
     const b = this.body
+    if (b.onGround && b.carrier) {
+      const m = this.world.motionOf(b.carrier)
+      if (m) {
+        b.x += m.dx
+        b.y += m.dy
+      }
+    }
+    if (!this.won) this.levelTime += dt
     const interact = this.input.consumeInteract()
     const jump = this.input.consumeJump()
     this.regrabT = Math.max(0, this.regrabT - dt)
@@ -350,7 +455,7 @@ export class Game {
       this.duck.celebrate()
       this.sfx.chime()
       this.cb.onTip('checkpoint')
-      this.cb.onCheckpoint(this.cpIndex + 1, CHECKPOINTS.length)
+      this.cb.onCheckpoint(this.cpIndex + 1, this.checkpoints.length)
     }
 
     // ---- footsteps follow the run cycle ----
@@ -391,17 +496,23 @@ export class Game {
     this.collectStars()
 
     // ---- safe recovery when falling out of the level ----
-    if (b.y < KILL_Y) this.respawn(true)
+    if (b.y < this.killY) this.respawn(true)
 
     // ---- end flag ----
-    if (b.x > FLAG_X - 0.35 && b.onGround) {
+    if (b.x > this.flagX - 0.35 && b.onGround) {
       this.won = true
       this.hopTimer = 0.3
       this.sfx.win()
       this.burst(b.x, b.y + 1.2, 26)
       this.burst(b.x - 1.2, b.y + 2.2, 18)
       this.burst(b.x + 1.2, b.y + 2.2, 18)
-      this.cb.onVictory(true, { stars: this.starsGot, starsTotal: this.level.stars.length })
+      this.cb.onVictory(true, {
+        stars: this.starsGot,
+        starsTotal: this.level.stars.length,
+        levelIndex: this.levelIdx,
+        levelName: this.def.name,
+        time: this.levelTime,
+      })
     }
 
     this.syncDuck(dt, 0)
@@ -491,14 +602,14 @@ export class Game {
       this.duck.facing = -1
     }
     this.duck.root.position.set(b.x, b.y, 0)
-    // highest platform top below the duck — feeds the contact shadow and
-    // gives the player a readable landing cue over gaps
+    // highest surface below the duck — feeds the contact shadow and
+    // gives the player a readable landing cue over gaps (movers included)
     let groundY = -8
-    for (const p of PLATFORMS) {
-      if (b.x >= p.x1 - 0.25 && b.x <= p.x2 + 0.25 && p.top <= b.y - b.hh + 0.08 && p.top > groundY) {
-        groundY = p.top
-      }
+    const consider = (x1: number, x2: number, top: number) => {
+      if (b.x >= x1 - 0.25 && b.x <= x2 + 0.25 && top <= b.y - b.hh + 0.08 && top > groundY) groundY = top
     }
+    for (const p of this.plats) consider(p.x1, p.x2, p.top)
+    for (const box of this.moverBoxes) consider(box.cx - box.hw, box.cx + box.hw, box.cy + box.hh)
     const speed = Math.hypot(b.vx, b.vy)
     this.duck.update(dt, {
       vx: b.vx,
@@ -574,9 +685,12 @@ export class Game {
     this.swinging = false
     this.activeSwing = null
     // brief cooldown so flying past THIS swing doesn't instantly re-grab it;
-    // any other swing in range stays grabbable for mid-air chains
+    // any other swing in range stays grabbable for mid-air chains. The base
+    // cooldown scales with release speed: a hard launch leaves the old
+    // swing's grab zone later, so it must stay locked longer (a weak drop
+    // only locks it for a blink, keeping low-release re-grabs snappy).
     this.regrabSwing = sw
-    this.regrabT = T.regrabCooldown
+    this.regrabT = T.regrabCooldown + Math.min(0.55, Math.hypot(b.vx, b.vy) * 0.05)
     b.onGround = false
     this.duck.onJump()
     this.duck.onRelease()
@@ -588,13 +702,13 @@ export class Game {
   /** Activate the next checkpoint when the duck lands on its platform. */
   private checkCheckpoints(): boolean {
     const b = this.body
-    for (let i = this.cpIndex + 1; i < CHECKPOINTS.length; i++) {
-      const cp = CHECKPOINTS[i]
-      const p = PLATFORMS[cp.plat]
+    for (let i = this.cpIndex + 1; i < this.checkpoints.length; i++) {
+      const cp = this.checkpoints[i]
+      const p = this.plats[cp.plat]
       if (!p) continue
       if (b.x > p.x1 + 0.3 && b.x < p.x2 - 0.3 && Math.abs(b.y - b.hh - cp.y) < 0.4) {
         this.cpIndex = i
-        this.level.setCheckpointActive(i)
+        this.level?.setCheckpointActive(i)
         return true
       }
     }
@@ -602,13 +716,14 @@ export class Game {
   }
 
   respawn(withFlash: boolean): void {
-    const cp = this.cpIndex >= 0 ? CHECKPOINTS[this.cpIndex] : { x: SPAWN.x, y: 0 }
+    const cp = this.cpIndex >= 0 ? this.checkpoints[this.cpIndex] : { x: this.spawnX, y: 0 }
     const b = this.body
     b.x = cp.x
     b.y = cp.y + T.colliderH / 2 + 0.02
     b.vx = 0
     b.vy = 0
     b.onGround = false
+    b.carrier = null
     this.swinging = false
     this.activeSwing = null
     this.regrabSwing = null
@@ -631,6 +746,7 @@ export class Game {
     this.hopTimer = 0
     this.cpIndex = -1
     this.starsGot = 0
+    this.levelTime = 0
     this.tipSent = { pump: false, star: false }
     for (const s of this.level.stars) {
       s.taken = false
@@ -731,6 +847,7 @@ export class Game {
         this.body.y = y
         this.body.vx = 0
         this.body.vy = 0
+        this.body.carrier = null
         this.swinging = false
         this.activeSwing = null
       },
@@ -739,6 +856,7 @@ export class Game {
         this.body.y = y
         this.body.vx = 4.2
         this.body.vy = 0
+        this.body.carrier = null
         this.swinging = false
         this.activeSwing = null
       },
@@ -747,6 +865,7 @@ export class Game {
       },
       respawnNow: () => this.respawn(true),
       fullReset: () => this.fullReset(),
+      loadLevel: (i: number) => this.loadLevel(i),
       sim: (n) => {
         const steps = Math.max(0, Math.min(900, Math.floor(n)))
         for (let i = 0; i < steps; i++) {
@@ -772,8 +891,21 @@ export class Game {
           if (d < s.range) inRange = true
           maxSwingOmega = Math.max(maxSwingOmega, Math.abs(s.omega))
         }
+        // nearest moving platform (rides are tested against this)
+        let moverX = 0
+        let moverTop = 0
+        let moverD = Infinity
+        for (const box of this.moverBoxes) {
+          const d = Math.abs(this.body.x - box.cx)
+          if (d < moverD) {
+            moverD = d
+            moverX = box.cx
+            moverTop = box.cy + box.hh
+          }
+        }
         return {
           time: this.time,
+          level: this.levelIdx,
           x: this.body.x,
           y: this.body.y,
           vx: this.body.vx,
@@ -783,11 +915,15 @@ export class Game {
           won: this.won,
           theta: this.activeSwing?.theta ?? 0,
           omega: this.activeSwing?.omega ?? 0,
+          swingX: this.activeSwing ? this.activeSwing.pivotX : 0,
           facing: this.duck.facing,
           cp: this.cpIndex,
           stars: this.starsGot,
           swings: this.swings.length,
-          checkpoints: CHECKPOINTS.length,
+          checkpoints: this.checkpoints.length,
+          movers: this.moverBoxes.length,
+          moverX: Math.round(moverX * 100) / 100,
+          moverTop: Math.round(moverTop * 100) / 100,
           nearD: Math.round(nearD * 100) / 100,
           inRange,
           maxSwingOmega: Math.round(maxSwingOmega * 100) / 100,
