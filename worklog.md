@@ -72,3 +72,25 @@ Stage Summary:
 - Key fixes: swing settle bug, omega caps, inelastic stops, ahead-bias grabs, platform-based checkpoints
 - Artifacts: download/screens/v4-*.png (12 shots), scripts/game-tests.js (reusable harness), README.md V0.4
 - Not done (honest): Android device testing/perf profiling (no device in sandbox); music; P9b is expert-only
+
+---
+Task ID: 4
+Agent: main (Z.ai)
+Task: Project Duck V0.5 — high-quality duck character, advanced animation & gameplay polish
+
+Work Log:
+- Inspected repo + live game first: confirmed V0.4 fully implemented (9 swings, checkpoints, stars); git commit 8f4bbd0 is the V0.4 baseline
+- Diagnosed v2 duck against the ornament reference: snowman neck-head crease, cone bill, separate tail lump, no legs (floating slab feet), goose-like proportions, big flat wing, swing pose lay-on-belly + feet floating above plank
+- Rebuilt Duck.ts as model v3: sculpted lathe torso (post-lathe deform: x1.38 elongation, chest fill, rear rotated up around mid-body pivot => tail is part of the silhouette), longer/thicker neck rising from the CHEST whose top rings bury deep inside a bigger skull (no crease), two-mandible droop-curved bill with vertex-tone gradient, layered folded wings (panel + covert), stubby legs with hip + ankle pivots and webbed feet, warm-white per-vertex cream gradient + clearcoat ceramic materials, glossy bead eyes
+- Animation overhaul: leg-driven waddle (hip swing + ankle counter-rotation) synced to footsteps; airborne tuck -> falling reach; sit pose = body hangs along rope (world rot +theta, corrected from v2's inverted factor), visual sit-sink -0.26 so the butt rests ON the plank (feet verified ON plank at theta 0), legs forward with dangle lag, wings raised toward ropes (-2.45); release fling pose via new duck.onRelease() wired in Game.release(); idle glance-at-player + tail sway added; contact shadow blob (height-fading, doubles as landing cue; groundY computed from PLATFORMS scan in syncDuck, no raycasts)
+- Fixed GLB export under bun (DOM guard for the shadow canvas texture); re-exported duck.glb (393 KB)
+- Iterated proportions via 6 zoomed screenshot rounds (v5-01..v5-14): head/neck thickness, neck chest-emergence, body elongation, wing size/layering, leg stubbiness
+- Regression: ran scripts/game-tests.js (window.__T.all()) after rebuild: warmup/regrab/missAndRecover/checkpointRespawn/stars/fullRoute PASS; fullRoute = all 9 swings, won, 13/13 stars, cp 8; chain catches S5 MID-AIR but follow-up lands P5 (46.1) not P6 — verified via git diff that physics/swing/level are byte-identical to V0.4, so pre-existing test-window behavior, not a V0.5 regression (documented in README)
+- Verified visually: idle/run/jump-air/swing sit/release flight/landing/victory overlay/mobile 390x844 portrait; console clean on fresh reload (cleared stale HMR buffer first); ESLint clean
+- Updated README.md to V0.5 (character section, test table, limitations)
+
+Stage Summary:
+- Deliverable: V0.5 at / — same verified V0.4 gameplay with a substantially upgraded collectible-figure duck (geometry, materials, legs, animation, swing integration, contact shadow)
+- Key decisions: physics untouched by design (preserve V0.4 behavior); visual-only sit-sink offset so collider/release trajectories stay identical; DOM-guarded shadow texture keeps GLB export working
+- Artifacts: download/screens/v5-00..v5-20 (17 QA shots), download/duck.glb v3, README V0.5
+- Not done (honest): Android device testing; far-wing micro-offset; no env changes (V0.4 world kept as-is per "polish without expanding scope")

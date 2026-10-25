@@ -188,6 +188,7 @@ export class Game {
       this.scene.add(s.group)
     }
     this.scene.add(this.duck.root)
+    this.scene.add(this.duck.shadowMesh)
 
     this.body = {
       x: SPAWN.x,
@@ -490,6 +491,14 @@ export class Game {
       this.duck.facing = -1
     }
     this.duck.root.position.set(b.x, b.y, 0)
+    // highest platform top below the duck — feeds the contact shadow and
+    // gives the player a readable landing cue over gaps
+    let groundY = -8
+    for (const p of PLATFORMS) {
+      if (b.x >= p.x1 - 0.25 && b.x <= p.x2 + 0.25 && p.top <= b.y - b.hh + 0.08 && p.top > groundY) {
+        groundY = p.top
+      }
+    }
     const speed = Math.hypot(b.vx, b.vy)
     this.duck.update(dt, {
       vx: b.vx,
@@ -500,6 +509,7 @@ export class Game {
       tilt: this.swinging && this.activeSwing ? this.activeSwing.theta : 0,
       pump,
       won: this.won,
+      groundY,
     })
     this.dirLight.position.set(b.x + 5, 11, 8)
     this.dirLight.target.position.set(b.x, 0, 0)
@@ -569,6 +579,7 @@ export class Game {
     this.regrabT = T.regrabCooldown
     b.onGround = false
     this.duck.onJump()
+    this.duck.onRelease()
     this.sfx.release()
   }
 
