@@ -1,24 +1,31 @@
 /**
- * Project Duck — the swing (V0.2).
+ * Project Duck — the swing (V0.4, chainable traversal).
  *
- * A classic playground A-frame: two angled legs per side (readable "A"
- * silhouette from the gameplay camera), a top bar, two ropes and a wooden
- * seat. The pendulum is analytically integrated (stable, damped, pumpable).
+ * Two visual families share one stable, analytically integrated pendulum:
+ *   frame   — classic playground A-frame standing on a platform or pedestal
+ *   hanging — a floating beam (magical hanging structure) with vines and a
+ *             lantern; the seat dangles over the gap on long ropes
  *
- * V0.2 additions:
- *  - forgiving grab feedback: a pulsing ring appears around the seat when
- *    the duck is in range (setInRange) and the seat does a happy bump on grab
- *  - idle breeze sway so unattended swings feel alive
- *  - per-instance colors/length so the level can have multiple swings
+ * V0.4 chain-system additions:
+ *  - per-instance grab range (cfg.range) and settle damping (cfg.damp) so
+ *    each swing can feel different (long garden vines vs snappy A-frames)
+ *  - attached feedback: ropes warm up + the seat glows softly while held
+ *  - release keeps the pendulum's energy, so swings stay swaying and can be
+ *    re-grabbed or reused by the next attempt
  */
 
 import * as THREE from 'three'
 
 export interface SwingCfg {
   x: number
-  baseY: number // ground/platform top under the frame
+  type?: 'frame' | 'hanging'
+  baseY?: number // frame: ground/platform top under the frame
+  pivotH?: number // frame: pivot height above baseY
+  pivotY?: number // hanging: absolute pivot height
   L: number // rope length
-  pivotH: number // pivot height above baseY
+  range?: number // grab radius override (default 2.1)
+  damp?: number // free-swing damping override (default 1.4)
+  maxV?: number // max tangential seat speed m/s (default 11.5) — keeps long ropes from launching rockets
   wood?: number
   woodDark?: number
   rope?: number
@@ -55,6 +62,10 @@ export class Swing {
   readonly pivotX: number
   readonly pivotY: number
   readonly L: number
+  readonly range: number
+  readonly damp: number
+  readonly kind: 'frame' | 'hanging'
+  readonly maxOmega: number
 
   theta = 0 // angle from vertical (rad, + = swung to the right)
   omega = 0 // angular velocity (rad/s)
@@ -63,40 +74,92 @@ export class Swing {
   private ring: THREE.Mesh
   private ringVisible = false
   private ropes: THREE.Mesh[] = []
+  private ropeMat: THREE.MeshStandardMaterial
+  private seatMat: THREE.MeshStandardMaterial
   private anchorZ = [0.4, -0.4]
   private phase: number
   private bumpT = 0
+  private heldGlow = 0
 
   constructor(cfg: SwingCfg) {
+    this.kind = cfg.type ?? 'frame'
     this.pivotX = cfg.x
     this.L = cfg.L
-    this.pivotY = cfg.baseY + cfg.pivotH
+    this.range = cfg.range ?? 2.1
+    this.damp = cfg.damp ?? 1.4
+    this.maxOmega = (cfg.maxV ?? 11.5) / cfg.L
+    this.pivotY = this.kind === 'hanging' ? (cfg.pivotY ?? cfg.baseY ?? 0) : (cfg.baseY ?? 0) + (cfg.pivotH ?? 3.5)
     this.phase = cfg.x * 1.7
 
     const wood = flatMat(cfg.wood ?? 0xd9a05b)
     const woodDark = flatMat(cfg.woodDark ?? 0xb97f45)
-    const ropeMat = new THREE.MeshStandardMaterial({
-      color: cfg.rope ?? 0x8a6a4a,
+    this.ropeMat = new THREE.MeshStandardMaterial({
+      color: cfg.rope ?? (this.kind === 'hanging' ? 0x7d9c5e : 0x8a6a4a),
       roughness: 0.75,
       metalness: 0,
     })
+    this.seatMat = flatMat(cfg.woodDark ?? 0xb97f45)
 
-    // ---- A-frame: two angled legs per side, classic playground look ----
-    const legLen = Math.hypot(1.18, cfg.pivotH)
-    const legAngle = Math.asin(1.18 / legLen)
-    for (const zs of [0.8, -0.8]) {
-      for (const s of [1, -1]) {
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.095, legLen, 8), wood)
-        leg.position.set(cfg.x + (s * 1.18) / 2, cfg.baseY + cfg.pivotH / 2, zs)
-        leg.rotation.z = s * legAngle
-        leg.castShadow = true
-        this.group.add(leg)
-        // rounded foot pad
-        const foot = new THREE.Mesh(roundedBoxGeo(0.42, 0.14, 0.34, 0.06), woodDark)
-        foot.position.set(cfg.x + s * 1.18, cfg.baseY + 0.07, zs)
-        foot.castShadow = true
-        this.group.add(foot)
+    if (this.kind === 'frame') {
+      // ---- A-frame: two angled legs per side, classic playground look ----
+      const baseY = cfg.baseY ?? 0
+      const halfSpan = 1.18
+      const legLen = Math.hypot(halfSpan, cfg.pivotH ?? 3.5)
+      const legAngle = Math.asin(halfSpan / legLen)
+      for (const zs of [0.8, -0.8]) {
+        for (const s of [1, -1]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.095, legLen, 8), wood)
+          leg.position.set(cfg.x + (s * halfSpan) / 2, baseY + (cfg.pivotH ?? 3.5) / 2, zs)
+          leg.rotation.z = s * legAngle
+          leg.castShadow = true
+          this.group.add(leg)
+          // rounded foot pad
+          const foot = new THREE.Mesh(roundedBoxGeo(0.42, 0.14, 0.34, 0.06), woodDark)
+          foot.position.set(cfg.x + s * halfSpan, baseY + 0.07, zs)
+          foot.castShadow = true
+          this.group.add(foot)
+        }
       }
+    } else {
+      // ---- floating beam: magical hanging structure with vines ----
+      const beam = new THREE.Mesh(roundedBoxGeo(2.3, 0.22, 0.5, 0.09), wood)
+      beam.position.set(cfg.x, this.pivotY + 0.14, 0)
+      beam.castShadow = true
+      this.group.add(beam)
+      const beamOutline = new THREE.Mesh(roundedBoxGeo(2.3, 0.22, 0.5, 0.09), woodDark)
+      beamOutline.scale.set(1.06, 1.28, 1.3)
+      beamOutline.position.copy(beam.position)
+      beamOutline.position.z -= 0.01
+      this.group.add(beamOutline)
+      // grassy top of the floating beam
+      const moss = new THREE.Mesh(roundedBoxGeo(2.2, 0.1, 0.56, 0.05), flatMat(0x7ecc5a))
+      moss.position.set(cfg.x, this.pivotY + 0.3, 0)
+      this.group.add(moss)
+      // drooping vines at both beam ends
+      for (const s of [-1, 1]) {
+        const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.8 + (s > 0 ? 0.35 : 0), 5), this.ropeMat)
+        vine.position.set(cfg.x + s * 1.05, this.pivotY - 0.28, 0.14)
+        this.group.add(vine)
+        const leafA = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), flatMat(0x6faf5e))
+        leafA.scale.set(1.5, 0.4, 0.8)
+        leafA.position.set(cfg.x + s * 1.05 + 0.05, this.pivotY - 0.55, 0.14)
+        this.group.add(leafA)
+      }
+      // little lantern hanging off the side — a warm beacon over the gap
+      const lampVine = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.55, 5), this.ropeMat)
+      lampVine.position.set(cfg.x - 0.75, this.pivotY - 0.3, -0.18)
+      this.group.add(lampVine)
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.1, 9, 7), new THREE.MeshStandardMaterial({
+        color: 0xffd98a,
+        emissive: 0xffc46a,
+        emissiveIntensity: 0.9,
+        roughness: 0.4,
+      }))
+      lamp.position.set(cfg.x - 0.75, this.pivotY - 0.62, -0.18)
+      this.group.add(lamp)
+      const lampCap = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.08, 7), woodDark)
+      lampCap.position.set(cfg.x - 0.75, this.pivotY - 0.53, -0.18)
+      this.group.add(lampCap)
     }
 
     // top bar + end caps + little collars where ropes attach
@@ -114,13 +177,13 @@ export class Swing {
     // ---- ropes ----
     const ropeGeo = new THREE.CylinderGeometry(0.028, 0.028, 1, 7)
     for (let i = 0; i < 2; i++) {
-      const rope = new THREE.Mesh(ropeGeo, ropeMat)
+      const rope = new THREE.Mesh(ropeGeo, this.ropeMat)
       this.ropes.push(rope)
       this.group.add(rope)
     }
 
     // ---- seat ----
-    const board = new THREE.Mesh(roundedBoxGeo(0.88, 0.11, 0.56, 0.05), woodDark)
+    const board = new THREE.Mesh(roundedBoxGeo(0.88, 0.11, 0.56, 0.05), this.seatMat)
     board.castShadow = true
     this.seat.add(board)
     // subtle plank groove + rope knots
@@ -128,7 +191,7 @@ export class Swing {
     groove.position.set(0, 0.056, 0)
     this.seat.add(groove)
     for (const zs of this.anchorZ) {
-      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), ropeMat)
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 8), this.ropeMat)
       knot.position.set(0, 0.03, zs)
       this.seat.add(knot)
     }
@@ -149,16 +212,16 @@ export class Swing {
   update(dt: number, pump: number, gravity: number): void {
     const torque = pump * 2.0
     this.omega += (-(gravity / this.L) * Math.sin(this.theta) - 0.22 * this.omega + torque) * dt
-    this.omega = Math.max(-4.4, Math.min(4.4, this.omega))
+    this.omega = Math.max(-this.maxOmega, Math.min(this.maxOmega, this.omega))
     this.theta += this.omega * dt
     this.theta = Math.max(-1.38, Math.min(1.38, this.theta))
     this.place()
   }
 
-  /** Free-hanging settle (damped) + a whisper of breeze while unattended. */
+  /** Free-hanging settle (per-swing damping) + a whisper of breeze while unattended. */
   settle(dt: number, t: number): void {
     const breeze = Math.abs(this.omega) < 0.35 ? Math.sin(t * 0.9 + this.phase) * 0.045 : 0
-    this.omega += (-(30 / this.L) * Math.sin(this.theta) - 1.4 * this.omega + breeze) * dt
+    this.omega += (-(30 / this.L) * Math.sin(this.theta) - this.damp * this.omega + breeze) * dt
     this.theta += this.omega * dt
     this.place()
   }
@@ -181,7 +244,7 @@ export class Swing {
     }
   }
 
-  /** Called every render frame: ring pulse + grab bump. */
+  /** Called every render frame: ring pulse + grab bump + held glow. */
   tickVisual(dt: number, t: number): void {
     if (this.ringVisible) {
       const p = 1 + Math.sin(t * 5.4) * 0.1
@@ -195,6 +258,12 @@ export class Swing {
       const s = 1 + Math.sin(this.bumpT * Math.PI) * 0.16
       this.seat.scale.set(s, 2 - s, s)
     }
+    // held feedback: ropes warm toward gold, seat lifts its glow — subtle
+    const target = this.ringVisible ? 0.35 : 0
+    this.heldGlow += (target - this.heldGlow) * Math.min(1, dt * 6)
+    const g = this.heldGlow
+    this.ropeMat.emissive.setRGB(0.55 * g, 0.32 * g, 0.08 * g)
+    this.seatMat.emissive.setRGB(0.35 * g, 0.2 * g, 0.05 * g)
   }
 
   /** Show/hide the "you can grab this" ring. */

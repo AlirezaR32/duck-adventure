@@ -84,6 +84,10 @@ export class Sfx {
     this.tone({ f0: 150, f1: 82, dur: 0.11, type: 'sine', vol: 0.2 })
     this.noise(0.06, 0.07, 900, 300)
   }
+  /** Tiny alternating footstep tick — deliberately very quiet. */
+  step(alt: boolean): void {
+    this.noise(0.035, 0.028, alt ? 2100 : 1700, 500)
+  }
   grab(): void {
     this.tone({ f0: 520, f1: 330, dur: 0.1, type: 'triangle', vol: 0.16 })
   }
@@ -91,6 +95,20 @@ export class Sfx {
   sparkle(): void {
     this.tone({ f0: 880, f1: 1320, dur: 0.08, type: 'sine', vol: 0.07 })
     this.tone({ f0: 1320, f1: 1760, dur: 0.1, type: 'sine', vol: 0.055, delay: 0.05 })
+  }
+  /** Star pickup: a happy two-note blip, brighter than the grab sparkle. */
+  collect(): void {
+    this.tone({ f0: 990, f1: 990, dur: 0.07, type: 'triangle', vol: 0.11 })
+    this.tone({ f0: 1480, f1: 1480, dur: 0.12, type: 'triangle', vol: 0.1, delay: 0.07 })
+  }
+  /** Warm two-note "checkpoint saved" chime. */
+  chime(): void {
+    this.tone({ f0: 660, f1: 660, dur: 0.14, type: 'sine', vol: 0.13 })
+    this.tone({ f0: 880, f1: 880, dur: 0.2, type: 'sine', vol: 0.12, delay: 0.12 })
+  }
+  /** Soft airy whoosh when the swing carries the duck through the arc fast. */
+  whoosh(): void {
+    this.noise(0.3, 0.07, 700, 2000)
   }
   release(): void {
     this.noise(0.24, 0.13, 500, 2400)

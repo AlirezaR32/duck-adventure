@@ -168,6 +168,9 @@ export class Duck {
   private curiosityTarget = 0
   private curiosityIn = 3
   private streakIn = 0
+  private celebT = 0 // celebratory animation timer (checkpoint / section)
+  private dizzyT = 0 // cute recovery animation timer (after respawn)
+  private stepHalf = 0
 
   constructor() {
     this.build()
@@ -355,7 +358,31 @@ export class Duck {
   // ---------------- expressive events (called by the controller) ----------------
 
   onJump(): void {
-    this.sqVel = 3.4 // stretch impulse
+    // anticipation: a quick compress-and-rebound — the duck dips for a few
+    // frames, then the spring's rebound becomes the launch stretch
+    this.sqVel = -3.6
+    this.nodVel -= 2.2
+  }
+
+  /** Brief celebratory bounce (checkpoint reached / section done). */
+  celebrate(): void {
+    this.celebT = 0.9
+    this.sqVel = 2.4
+  }
+
+  /** Cute recovery wobble right after respawning from a fall. */
+  dizzy(): void {
+    this.dizzyT = 1.15
+  }
+
+  /** Footstep callback hook fed from the controller's run-cycle phase. */
+  consumeStep(): boolean {
+    const half = Math.floor(this.runPhase / Math.PI)
+    if (half !== this.stepHalf) {
+      this.stepHalf = half
+      return true
+    }
+    return false
   }
 
   onLand(fallSpeed: number): void {
@@ -454,6 +481,10 @@ export class Duck {
     const speedAbs = Math.abs(s.vx)
     const localVx = s.vx * this.facing
     const runAmt = Math.min(1, speedAbs / 4.2)
+    this.celebT = Math.max(0, this.celebT - dt)
+    this.dizzyT = Math.max(0, this.dizzyT - dt)
+    const celeb = this.celebT > 0 ? Math.sin((1 - this.celebT / 0.9) * Math.PI) : 0
+    const dizzy = this.dizzyT > 0 ? Math.sin(this.dizzyT / 1.15 * Math.PI) : 0
 
     // pose blends
     this.sitBlend += ((s.swinging ? 1 : 0) - this.sitBlend) * Math.min(1, dt * 9)
@@ -465,7 +496,7 @@ export class Duck {
     }
     const w = this.runPhase
 
-    // body bounce + forward lean
+    // body bounce + forward lean (+ celebration hop wiggle / dizzy wobble)
     const bounce = s.grounded && !s.swinging ? Math.abs(Math.sin(w)) * 0.05 * runAmt : 0
     const leanTarget = s.swinging
       ? -0.1
@@ -473,8 +504,10 @@ export class Duck {
         ? Math.max(-0.18, Math.min(0.18, localVx * 0.045))
         : Math.max(-0.14, Math.min(0.14, localVx * 0.022)) + (s.falling ? 0.1 : -0.06)
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 10)
-    this.bodyGrp.rotation.z = -this.lean + 0.12 * this.sitBlend
-    this.bodyGrp.position.y = bounce + 0.02 * this.sitBlend
+    this.bodyGrp.rotation.z =
+      -this.lean + 0.12 * this.sitBlend + Math.sin(this.t * 14) * 0.09 * celeb + Math.sin(this.t * 9) * 0.11 * dizzy
+    this.bodyGrp.position.y = bounce + 0.02 * this.sitBlend + celeb * 0.05
+    this.bodyGrp.rotation.y = Math.sin(this.t * 4.5) * 0.2 * dizzy
 
     // gentle breathing while idle
     const idle = s.grounded && speedAbs < 0.25 && !s.swinging
@@ -499,10 +532,14 @@ export class Duck {
     if (this.airBlend > 0.5) neckRot += (s.falling ? -0.1 : 0.16) * this.airBlend
     this.neckGrp.rotation.z += (neckRot - this.neckGrp.rotation.z) * Math.min(1, dt * 8)
 
-    // head: landing nod spring
+    // head: landing nod spring (+ celebration nod / dizzy head-shake)
     this.nodVel += (-160 * this.nod - 12 * this.nodVel) * dt
     this.nod += this.nodVel * dt
-    this.headGrp.rotation.z = Math.max(-0.5, Math.min(0.5, this.nod)) + (s.won ? Math.sin(this.t * 6) * 0.06 : 0)
+    this.headGrp.rotation.z =
+      Math.max(-0.5, Math.min(0.5, this.nod)) +
+      (s.won ? Math.sin(this.t * 6) * 0.06 : 0) +
+      celeb * Math.sin(this.t * 11) * 0.14 +
+      dizzy * Math.sin(this.t * 12) * 0.2
 
     // rope tilt while swinging (applied in facing space)
     this.squash.rotation.z += ((s.swinging ? -s.tilt * this.facing * 0.55 : 0) - this.squash.rotation.z) * Math.min(1, dt * 12)
@@ -531,7 +568,7 @@ export class Duck {
     // ropes when sitting · big proud flaps when celebrating
     let wingTarget: number
     let wingSpeed = 0
-    if (s.won) {
+    if (s.won || celeb > 0.2) {
       wingTarget = -1.5
       wingSpeed = 15
     } else if (s.swinging) {
@@ -555,8 +592,12 @@ export class Duck {
       this.blinkIn = 2 + Math.random() * 2.6
     }
     if (this.blinkLeft > 0) this.blinkLeft -= dt
-    const eyeY = s.won ? 0.42 : this.blinkLeft > 0 ? 0.12 : s.falling && !s.swinging ? 1.3 : 1
-    for (const e of this.eyes) e.scale.y += (eyeY - e.scale.y) * Math.min(1, dt * 30)
+    const eyeY = s.won || celeb > 0.2 ? 0.42 : this.blinkLeft > 0 ? 0.12 : s.falling && !s.swinging ? 1.3 : 1
+    const eyeX = dizzy > 0 ? 1 + Math.sin(this.t * 16) * 0.3 : 1
+    for (const e of this.eyes) {
+      e.scale.y += (eyeY - e.scale.y) * Math.min(1, dt * 30)
+      e.scale.x += (eyeX - e.scale.x) * Math.min(1, dt * 20)
+    }
 
     // wind streaks while flying fast
     this.streakIn -= dt

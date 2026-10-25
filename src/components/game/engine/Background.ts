@@ -20,7 +20,7 @@ interface Cloud {
 
 export class Background {
   private clouds: Cloud[] = []
-  private rangeX = [-16, 96]
+  private rangeX = [-20, 150]
   private sun: THREE.Group
 
   constructor(private scene: THREE.Scene) {
@@ -81,16 +81,16 @@ export class Background {
   private buildHills(): void {
     // three quiet rings, each a step cooler/lighter so they read as layers
     const mist = 0xeef5e6
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 11; i++) {
       this.hill(mist, 12 + (i % 3) * 3.4, 0.3, -22 + i * 16, -4.4, -26 - (i % 3) * 2)
     }
     const farC = 0xcfe6cd
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 11; i++) {
       this.hill(farC, 10 + (i % 3) * 3, 0.32, -20 + i * 15.5, -3.4, -19 - (i % 3) * 1.5)
     }
     // mid ring — warm sage, clearly greener than the far rows
     const midC = 0xaed397
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       this.hill(midC, 6.5 + (i % 2) * 2.4, 0.38, -14 + i * 15, -3.0, -12.5 - (i % 2) * 1.6)
     }
   }
@@ -99,8 +99,8 @@ export class Background {
   private buildCloudSea(): void {
     const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, fog: false, toneMapped: false })
     const mat2 = new THREE.MeshBasicMaterial({ color: 0xf2faff, fog: false, toneMapped: false })
-    for (let i = 0; i < 26; i++) {
-      const x = -18 + i * 4.4 + Math.sin(i * 12.9898) * 1.6
+    for (let i = 0; i < 40; i++) {
+      const x = -20 + i * 4.4 + Math.sin(i * 12.9898) * 1.6
       const g = new THREE.Group()
       const n = 3
       for (let j = 0; j < n; j++) {
@@ -116,7 +116,7 @@ export class Background {
 
   private buildClouds(): void {
     const mat = new THREE.MeshBasicMaterial({ color: 0xfffdf6, fog: false, toneMapped: false })
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 12; i++) {
       const g = new THREE.Group()
       const n = 3
       for (let j = 0; j < n; j++) {
@@ -125,7 +125,7 @@ export class Background {
         b.scale.y = 0.6
         g.add(b)
       }
-      g.position.set(-12 + i * 15.5 + (i % 3) * 3, 5 + (i % 3) * 1.3, -9 - (i % 3) * 2.5)
+      g.position.set(-14 + i * 13.5 + (i % 3) * 3, 5 + (i % 3) * 1.3, -9 - (i % 3) * 2.5)
       this.clouds.push({ group: g, speed: 0.1 + (i % 4) * 0.05 })
       this.scene.add(g)
     }
