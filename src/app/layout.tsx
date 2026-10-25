@@ -2,11 +2,22 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Project Duck — V0.8",
+  title: "Duck Adventure",
   description:
     "A cute 2.5D physics platformer: run, jump and swing across four fantasy regions with a little low-poly duck.",
+  applicationName: "Duck Adventure",
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Duck Adventure",
+    statusBarStyle: "default",
   },
 };
 

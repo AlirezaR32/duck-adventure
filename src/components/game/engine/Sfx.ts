@@ -1,12 +1,18 @@
 /**
  * Project Duck — tiny WebAudio synth for game feel.
- * No audio files: every sound is generated on the fly. Includes a mute toggle.
+ * No audio files: every sound is generated on the fly. Includes a mute
+ * toggle, a persisted SFX volume and a dedicated music bus (Music.ts
+ * schedules into it) so the two volumes are independently adjustable.
  */
 
 export class Sfx {
   muted = false
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
+  /** Shared music bus — Music.ts connects its scheduler output here. */
+  private music: GainNode | null = null
+  private musicVol = 0.6
+  private sfxVol = 1
 
   /** Create/resume the AudioContext — must be called from a user gesture at least once. */
   unlock(): void {
@@ -22,8 +28,11 @@ export class Sfx {
         if (!AC) return null
         this.ctx = new AC()
         this.master = this.ctx.createGain()
-        this.master.gain.value = 0.5
+        this.applyGains()
         this.master.connect(this.ctx.destination)
+        this.music = this.ctx.createGain()
+        this.music.gain.value = this.musicVol * 0.5
+        this.music.connect(this.ctx.destination)
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume()
       return this.ctx
@@ -32,8 +41,55 @@ export class Sfx {
     }
   }
 
+  /** The shared AudioContext for the music scheduler (created on demand). */
+  contextForMusic(): AudioContext | null {
+    return this.ensure()
+  }
+
+  /** Destination node music should connect into (created on demand). */
+  musicBus(): GainNode | null {
+    this.ensure()
+    return this.music
+  }
+
+  /** 0..1 SFX loudness (UI setting); combined with the master mute. */
+  setSfxVolume(v: number): void {
+    this.sfxVol = Math.max(0, Math.min(1, v))
+    this.applyGains()
+  }
+
+  /** 0..1 music loudness (UI setting). Applies live to the music bus. */
+  setMusicVolume(v: number): void {
+    this.musicVol = Math.max(0, Math.min(1, v))
+    this.applyGains()
+  }
+
+  private applyGains(): void {
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5 * this.sfxVol
+    // music rides its own bus (independent of the SFX volume) but the master
+    // mute must silence it too
+    if (this.music && this.ctx) {
+      this.music.gain.setTargetAtTime(this.muted ? 0 : this.musicVol * 0.5, this.ctx.currentTime, 0.05)
+    }
+  }
+
+  /** True when the underlying AudioContext is currently suspended. */
+  isSuspended(): boolean {
+    return this.ctx?.state === 'suspended'
+  }
+
+  /** Suspend all audio (pause menu / app backgrounded). Reversible. */
+  suspendAll(): void {
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend()
+  }
+
+  /** Resume audio after suspendAll() (must follow a user gesture on some browsers). */
+  resumeAll(): void {
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume()
+  }
+
   private tone(o: { f0: number; f1: number; dur: number; type: OscillatorType; vol: number; delay?: number }): void {
-    if (this.muted) return
+    if (this.muted || this.sfxVol <= 0) return
     const ctx = this.ensure()
     if (!ctx || !this.master) return
     const t0 = ctx.currentTime + (o.delay ?? 0)
@@ -52,7 +108,7 @@ export class Sfx {
   }
 
   private noise(dur: number, vol: number, f0: number, f1: number): void {
-    if (this.muted) return
+    if (this.muted || this.sfxVol <= 0) return
     const ctx = this.ensure()
     if (!ctx || !this.master) return
     const t0 = ctx.currentTime

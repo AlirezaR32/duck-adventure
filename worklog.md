@@ -167,3 +167,27 @@ Stage Summary:
 - Key decisions: physics constants untouched (reachability preserved); walk-on ferry over jump-timing boarding; relative-distance burr hop; L3 burr redesigned after a reachability proof; quality over quantity (wind gusts + 4th hazard type scoped out)
 - Artifacts: download/screens/v8/ (8 shots), scripts/game-tests-v8.js, README V0.8, worklog (this entry)
 - Not done (honest): Android device testing / real-GPU fps (no device in sandbox); human playtesting; music
+
+---
+Task ID: 8
+Agent: main (Z.ai)
+Task: Project Duck V0.9 — Android release readiness, stability, final polish
+
+Work Log:
+- Step A audit FIRST (per spec): confirmed V0.8 baseline real (commit 3e94820); ran the live 14-scenario suite BEFORE touching anything — 14/14 GREEN (baseline); re-read all 11 engine files + shell; identified real gaps: no menu/pause/settings/music, mute not persisted, prompt stuck-bug candidates, Swing.place() per-frame Vector3 allocations (~2k/s), no PWA manifest/icons, no visibilitychange handling
+- Step B stabilizer: physics untouched by design (all reachability verified against V0.7/V0.8 constants); fixed prompt lingering under win overlay (setPrompt('') on victory)
+- Session shell: GameCanvas.tsx rebuilt — main menu (PLAY/CONTINUE→highest unlocked, LEVELS, SETTINGS over live idle backdrop, keyboard blocked via Game.setInputBlocked), pause menu (Resume/Restart/Settings/Main Menu) wired to a real engine pause (sim frozen, inputs cleared, audio suspended/resumed via user gesture), settings screen (SFX vol, music vol, vibration toggle, graphics tier Battery/Balanced/High) — every control functional and persisted (duck-settings-v1)
+- Audio: Sfx.ts gained per-bus volumes (setSfxVolume/setMusicVolume, mute gates both), suspend/resume; NEW Music.ts — generative C-pentatonic ambient (pluck + pads, 2 sections, 250ms lookahead scheduler, zero per-frame cost), starts on first user gesture, stops on pause/backgrounding; verified live: musicOn true after PLAY, false when paused
+- Game.ts: paused flag + setPaused (audio halt/resume), visibilitychange auto-pause (mobile-reliable, NOT blur-only) with onAutoPause callback → pause menu on return, inputBlocked for menu, applyQuality tiers (DPR caps 1/1.75/2, castShadow + shadow-map disposal on resize, particle cap 40/60/80), unlockAudio, confetti burst budget, debug hook +setPaused/setQuality/paused/dpr/shadows/music state
+- Android robustness: multi-finger-safe hold() (per-button pointer-id Sets — lifting one of two fingers no longer drops the input), stuck-tap fix (GRAB unmount mid-press force-clears interact via useEffect on prompt.visible), safe-area-inset HUD top + bottom, WebGL failure fallback UI (no more white screen), setPointerCapture guarded for synthetic ids
+- Perf: Swing.place() zero-allocation (module scratch sA/sB/sDir + per-swing anchorScratch); confetti shares 5 materials + burst budget; measured 390×844 Balanced: L1 94dc/22.6k tris, L4 101dc/22.7k (V0.8 recorded 104/23.4k — slightly better); Battery −19dc; headless SwiftShader ~4fps @720p (honest: not device-representative)
+- Packaging: PWA manifest (standalone, theme #fff2d2, orientation any) + generated duck launcher icons (192/512/maskable/apple-touch, scripts/gen-icons.mjs + sharp), layout.tsx metadata (manifest link, appleWebApp, icons, title "Duck Adventure"); verified 200 on dev AND production standalone server; Android path documented as TWA/Bubblewrap (primary) + Capacitor (alt)
+- Save integrity: corrupt save → boots to menu (no crash), partial save normalized (missing levels backfilled, unlocked kept); settings persisted + re-applied at boot (verified via reload)
+- Testing: scripts/game-tests-v9.js (6 scenarios: pauseSwing/pauseRespawn/quality/levelLoop(8 hops, no leaks)/multiTouch(synthetic pointers, vx −4.2 held → 0 released)/hudPrompt(stuck-tap regression)); FINAL: two consecutive full green runs — 14/14 V0.8 + 6/6 V0.9 = 20/20; manual UI probes: menu→play→pause→resume→restart→menu, settings persistence, tab-background auto-pause + resume, music lifecycle, PWA head meta; ESLint clean, tsc clean (game files), bun run build + prod server smoke test PASS
+- Honest limitations: NO Android device/SDK in sandbox (no gradle/sdkmanager/ANDROID_HOME) — TWA commands documented but unexecuted, no APK produced; no human playtesting; music is one mood (no per-region themes)
+- Artifacts: download/screens/v9/ (mobile menu/playing/pause/settings + desktop menu/L4), public/manifest.webmanifest + icons, scripts/gen-icons.mjs, scripts/game-tests-v9.js, README V0.9, worklog (this entry)
+
+Stage Summary:
+- Deliverable: V0.9 at / — complete release shell (menu/pause/settings/completion), generative music, functional persisted settings, hardened saves, Android-grade touch + lifecycle handling, PWA packaging, graceful WebGL fallback; all four regions and physics byte-identical, 20/20 regression green
+- Key decisions: physics untouched (reachability); auto-pause on visibilitychange with explicit resume (autoplay-policy compliant); quality tiers change DPR/shadows/particles only (game plays identically); TWA over Capacitor as the primary Android path (PWA-first, zero wrapper code)
+- Not done (honest): real-device test (no hardware), APK build (no SDK), human playtesting

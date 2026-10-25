@@ -29,6 +29,10 @@ import { Background } from './Background'
 import { buildLevelRuntime, type LevelHandle } from './Level'
 import { LEVELS, type CheckpointDef, type LevelDef, type PlatDef } from './levels'
 import { Sfx } from './Sfx'
+import { Music } from './Music'
+
+/** Graphics quality tiers — Android-friendly presets, applied live. */
+export type QualityTier = 'battery' | 'balanced' | 'high'
 
 const T = {
   gravity: -30,
@@ -79,6 +83,8 @@ export interface GameCallbacks {
   onCheckpoint(index: number, total: number): void
   /** Fired after a level finished loading (also on construction). */
   onLevelStart(index: number, def: LevelDef): void
+  /** The app was backgrounded mid-run — the UI should show the pause menu. */
+  onAutoPause(): void
 }
 
 interface DebugApi {
@@ -89,6 +95,10 @@ interface DebugApi {
   releaseWhen(minOmega: number, loTheta: number, hiTheta: number): void
   respawnNow(): void
   fullReset(): void
+  /** UI-driving tests: open/close the engine pause (same path as the button). */
+  setPaused(v: boolean): void
+  /** UI-driving tests: apply a graphics tier (same path as settings). */
+  setQuality(q: 'battery' | 'balanced' | 'high'): void
   /** Teleport just above a point, zero velocity (for arc verification). */
   place(x: number, y: number): void
   /** Deterministic testing: advance exactly n fixed sim steps (visuals kept coherent). */
@@ -112,6 +122,7 @@ interface Particle {
 export class Game {
   readonly input = new InputState()
   readonly sfx = new Sfx()
+  private music = new Music()
 
   private cb: GameCallbacks
   private canvas: HTMLCanvasElement
@@ -170,11 +181,29 @@ export class Game {
   private lastT = 0
   private raf = 0
   private disposed = false
+  /** Pause menu / app backgrounded: sim frozen, canvas keeps its last frame. */
+  private paused = false
+  private quality: QualityTier = 'balanced'
+  /** Confetti budget — burst() trims requests over this (battery tier lowers it). */
+  private particleCap = 80
 
   private onKeyDown = (e: KeyboardEvent) => this.key(e, true)
   private onKeyUp = (e: KeyboardEvent) => this.key(e, false)
   private onBlur = () => this.input.clearAll()
   private onResize = () => this.resize()
+  private onVisibility = () => {
+    if (document.visibilityState === 'hidden') {
+      // Android backgrounding: never rely on `blur` (unreliable on mobile).
+      // Freeze the run, drop held inputs, silence audio — the UI shows the
+      // pause menu so returning players explicitly resume.
+      this.input.clearAll()
+      if (!this.won) {
+        this.paused = true
+        this.haltAudio()
+        this.cb.onAutoPause()
+      }
+    }
+  }
 
   constructor(canvas: HTMLCanvasElement, cb: GameCallbacks, startLevel = 0) {
     this.canvas = canvas
@@ -230,6 +259,7 @@ export class Game {
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('blur', this.onBlur)
     window.addEventListener('resize', this.onResize)
+    document.addEventListener('visibilitychange', this.onVisibility)
     this.resize()
 
     this.installDebugHook()
@@ -237,6 +267,73 @@ export class Game {
     // ---- loop ----
     this.lastT = performance.now()
     this.raf = requestAnimationFrame(this.tick)
+  }
+
+  // ============================ pause / quality / audio ============================
+
+  /** Freeze or resume the simulation (pause menu, app backgrounded). */
+  setPaused(v: boolean): void {
+    if (this.paused === v) return
+    this.paused = v
+    this.input.clearAll()
+    if (v) {
+      this.haltAudio()
+    } else {
+      // resume must follow a user gesture to satisfy browser autoplay rules
+      this.sfx.resumeAll()
+      this.music.start(this.sfx.contextForMusic(), this.sfx.musicBus())
+    }
+  }
+
+  get isPaused(): boolean {
+    return this.paused
+  }
+
+  /** Apply a graphics tier live: DPR cap, shadows, particle budget. */
+  applyQuality(q: QualityTier): void {
+    this.quality = q
+    const dpr = window.devicePixelRatio || 1
+    if (q === 'battery') {
+      this.renderer.setPixelRatio(Math.min(dpr, 1))
+      this.dirLight.castShadow = false
+      this.particleCap = 40
+    } else if (q === 'balanced') {
+      this.renderer.setPixelRatio(Math.min(dpr, 1.75))
+      this.dirLight.castShadow = true
+      this.setShadowRes(1024)
+      this.particleCap = 60
+    } else {
+      this.renderer.setPixelRatio(Math.min(dpr, 2))
+      this.dirLight.castShadow = true
+      this.setShadowRes(2048)
+      this.particleCap = 80
+    }
+    this.resize()
+  }
+
+  get currentQuality(): QualityTier {
+    return this.quality
+  }
+
+  /** Changing the shadow map size at runtime needs a map disposal to stick. */
+  private setShadowRes(res: number): void {
+    if (this.dirLight.shadow.mapSize.x === res) return
+    this.dirLight.shadow.mapSize.set(res, res)
+    if (this.dirLight.shadow.map) {
+      this.dirLight.shadow.map.dispose()
+      this.dirLight.shadow.map = null as unknown as THREE.WebGLRenderTarget
+    }
+  }
+
+  /** Start audio + music — call from any user gesture (autoplay policy). */
+  unlockAudio(): void {
+    this.sfx.unlock()
+    this.music.start(this.sfx.contextForMusic(), this.sfx.musicBus())
+  }
+
+  private haltAudio(): void {
+    this.music.stop()
+    this.sfx.suspendAll()
   }
 
   // ============================ level lifecycle ============================
@@ -318,6 +415,13 @@ export class Game {
   private tick = (now: number): void => {
     if (this.disposed) return
     this.raf = requestAnimationFrame(this.tick)
+    if (this.paused) {
+      // keep the last presented frame; sim and render are both skipped.
+      // lastT keeps tracking so resuming never produces a dt spike.
+      this.lastT = now
+      this.acc = 0
+      return
+    }
     let dt = (now - this.lastT) / 1000
     this.lastT = now
     dt = Math.min(dt, 0.1)
@@ -533,6 +637,7 @@ export class Game {
     if (b.x > this.flagX - 0.35 && b.onGround) {
       this.won = true
       this.hopTimer = 0.3
+      this.setPrompt('') // the contextual button must not linger under the overlay
       this.sfx.win()
       this.burst(b.x, b.y + 1.2, 26)
       this.burst(b.x - 1.2, b.y + 2.2, 18)
@@ -594,6 +699,9 @@ export class Game {
   // ============================ confetti (shared bursts) ============================
 
   private burst(x: number, y: number, n: number): void {
+    // live particle budget: trim bursts when the cap is reached (battery
+    // tier lowers the cap instead of changing how effects look)
+    n = Math.max(0, Math.min(n, this.particleCap - this.confetti.length))
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(
         this.confettiGeo,
@@ -854,11 +962,13 @@ export class Game {
 
   dispose(): void {
     this.disposed = true
+    this.music.stop()
     cancelAnimationFrame(this.raf)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
     window.removeEventListener('resize', this.onResize)
+    document.removeEventListener('visibilitychange', this.onVisibility)
     this.renderer.dispose()
   }
 
@@ -866,6 +976,7 @@ export class Game {
 
   private key(e: KeyboardEvent, down: boolean): void {
     if (e.repeat) return
+    if (this.paused || this.inputBlocked) return // menus own the keyboard
     const c = e.code
     if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'ArrowUp' || c === 'Space') e.preventDefault()
     if (down) this.sfx.unlock()
@@ -878,8 +989,18 @@ export class Game {
 
   /** Touch buttons call this. */
   setInput(name: InputName, down: boolean): void {
+    if (this.inputBlocked) return
     this.sfx.unlock()
     this.input.set(name, down)
+  }
+
+  private inputBlocked = false
+
+  /** Main menu: keep the world alive as a backdrop but drop player input
+   *  (touch buttons are covered anyway, the keyboard is not). */
+  setInputBlocked(v: boolean): void {
+    this.inputBlocked = v
+    if (v) this.input.clearAll()
   }
 
   /** Toggle sound; returns the new muted state. */
@@ -922,6 +1043,8 @@ export class Game {
       },
       respawnNow: () => this.respawn(true),
       fullReset: () => this.fullReset(),
+      setPaused: (v: boolean) => this.setPaused(v),
+      setQuality: (q: 'battery' | 'balanced' | 'high') => this.applyQuality(q),
       loadLevel: (i: number) => this.loadLevel(i),
       sim: (n) => {
         const steps = Math.max(0, Math.min(900, Math.floor(n)))
@@ -973,6 +1096,10 @@ export class Game {
         return {
           time: this.time,
           level: this.levelIdx,
+          paused: this.paused,
+          dpr: Math.round(this.renderer.getPixelRatio() * 100) / 100,
+          shadows: this.dirLight.castShadow,
+          music: this.music.isPlaying,
           x: this.body.x,
           y: this.body.y,
           vx: this.body.vx,

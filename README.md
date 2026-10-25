@@ -1,4 +1,4 @@
-# Project Duck — V0.8
+# Duck Adventure — V0.9
 
 A charming, **level-based 2.5D fantasy adventure** starring a smooth, collectible-toy white
 duck, built for mobile (Android-first) play in the browser. The duck matches the supplied
@@ -7,12 +7,16 @@ rounded head, a properly sculpted orange bill, glossy bead eyes with catchlight,
 wings that hug the flank, a perky lifted tail blended into the silhouette, and stubby orange
 legs with webbed feet.
 
-V0.8 expands the game into **four connected fantasy regions** on one deliberate difficulty
-curve — Enchanted Meadow → Floating Islands → Crystal Canyon → **Cloud Garden (new)** — and
-adds the game's first real hazards, an expert-only shortcut route, fantasy landmarks
-(suspended ring gates, glowing puff flora, background rope bridges), region identity in the
-UI, and a fourth level finale built around a **double mid-air vine chain**. The duck model,
-animation system, physics constants and controls are preserved untouched from V0.7.
+**V0.9 is the release-readiness pass**: the game now has a complete session shell — main
+menu → play → pause → settings → level picker → completion — generative ambient **music**,
+a **settings screen where every control actually works** (SFX/music volume, vibration,
+graphics tier — all persisted), hardened **save integrity** (corrupt data can never crash
+the game), Android-grade **touch robustness** (multi-finger-safe buttons, no stuck inputs,
+safe-area-aware HUD, backgrounding auto-pause), a **PWA manifest + generated launcher
+icons** for the Android packaging path, a graceful **WebGL fallback**, and targeted
+performance work (zero per-frame allocations in the swing renderer, shared-particle
+materials, live graphics tiers). The duck model, animation, physics constants, all four
+regions and their verified reachability are preserved untouched.
 
 ![screenshots](download/screens/v8/v8-l4-ferry-ring.png)
 
@@ -21,29 +25,33 @@ animation system, physics constants and controls are preserved untouched from V0
 Same as V0: **Three.js (real 3D) + a custom 2D-plane physics controller** on Next.js/TypeScript —
 instantly playable in any browser, deterministic fixed-timestep sim (1/60) that can be tested
 headlessly, and the duck exports to **`download/duck.glb`** for future Godot/Unity/Blender use.
-The Android packaging path (Capacitor) is documented at the bottom.
+The Android packaging path (TWA/Bubblewrap or Capacitor) is documented at the bottom.
 
 ## Run it
 
 ```bash
 bun install
 bun run dev        # dev server (the sandbox runs this automatically on port 3000)
+bun run build      # production build (verified: compiles + serves, statics 200)
 ```
 
 Desktop keyboard works for development: **← → / A D** run · **Space / ↑ / W** jump ·
 **E / Enter** grab & let go · **R** quick retry (respawn at checkpoint).
 
 Touch: ← → buttons bottom-left · big **JUMP** bottom-right · contextual **GRAB / LET GO**
-button appears near swings. All buttons use per-pointer capture so run + jump + grab
-multi-touch combinations work.
+button appears near swings. All buttons are **multi-finger-safe** (a second finger landing
+on the same button can no longer drop the input when the first lifts) and inputs are
+force-released on pause, unmount, and app backgrounding.
 
 ## The loop (complete session)
 
-**Region intro → run → jump → grab → pump → release → fly → collect → hazard dodge →
-checkpoint → … → finish → result screen → next region / replay.** Progress (unlocked
-regions, per-region best stars & time) persists in localStorage (`duck-save-v2`, no accounts,
-offline-friendly). Replaying a completed region never duplicates rewards — records are
-best-value merges.
+**Main menu → (continue / pick region) → region intro → run → jump → grab → pump → release →
+fly → collect → hazard dodge → checkpoint → … → finish → result screen → next region / replay
+/ menu.** Pause any time (button or app backgrounding); the pause menu offers resume,
+restart, settings and main menu. Progress (unlocked regions, per-region best stars & time)
+persists in localStorage (`duck-save-v2`); settings in `duck-settings-v1`. No accounts,
+offline-friendly. Corrupt or partial save data is normalized or discarded — never a crash.
+Replaying a completed region never duplicates rewards — records are best-value merges.
 
 ## The four regions
 
@@ -52,98 +60,136 @@ best-value merges.
 | A | **Enchanted Meadow** (Meadow Swing) | sunny meadow | teach run, jump, grab, pump, release | teaching hop, 2 A-frame swings, wide landings, 1 checkpoint, 5 stars |
 | B | **Floating Islands** (Floating Isles) | airy mint isles | reward momentum & release timing | climb, long vine, **mid-air chain pair** (S3→S4), high/low routes, 2 checkpoints, 7 stars |
 | C | **Crystal Canyon** (Crystal Canyon) | warm dusk canyon | demanding traversal + the first hazards | elevated swing, **moving ferry slab**, long vine, **thorn burr hazard**, checkpoint before the hardest climb, **vertical elevator**, background rope bridge, 2 checkpoints, 6 stars |
-| D | **Cloud Garden** (Cloud Garden) — *new* | dusk-magic lavender sky, mint grass on cloud-rock | combine everything: momentum, chains, movers, precision landings | teaching hop, climb swing, long vine, **walk-on lily ferry through a ring gate**, chain zone (S3→S4), **double-vine grand finale (S5→S6 mid-air chain)** through a second ring gate, **optional expert shortcut isle** (skips S6 entirely), thorn burr, 3 checkpoints, 10 stars |
+| D | **Cloud Garden** (Cloud Garden) | dusk-magic lavender sky, mint grass on cloud-rock | combine everything: momentum, chains, movers, precision landings | teaching hop, climb swing, long vine, **walk-on lily ferry through a ring gate**, chain zone (S3→S4), **double-vine grand finale (S5→S6 mid-air chain)** through a second ring gate, **optional expert shortcut isle**, thorn burr, 3 checkpoints, 10 stars |
 
 Every platform, swing, mover, hazard and checkpoint transition in all four regions was
 **reached and verified with the deterministic sim harness** (see Tests). Physics constants
-are byte-identical to V0.7 — reachability of the existing three regions is untouched.
+are byte-identical to V0.7/V0.8 — reachability is untouched.
 
-## What changed in V0.8
+## What changed in V0.9
 
-### Region D — Cloud Garden (new level, ~100u)
-- 9 platforms + 1 mover + 6 swings over a lavender sky with a pink cloud sea, pale violet
-  hill rings and drifting clouds; platforms are mint-capped cloud-rock with dark violet
-  outlines so the white duck always pops.
-- **Walk-on lily ferry**: the moving pad's top sits 0.02u above the wide garden so the duck
-  *walks straight on* (no jump timing), rides through the first **ring gate**, and hops off
-  at the far side. Falling is a soft recovery to the nearest checkpoint.
-- **Chain zone**: pedestal swing → hard release → mid-air grab of the hanging vine, with a
-  safe catch isle underneath for the fallback route.
-- **Grand finale**: pump the long finale vine, release at mid-arc, **chain mid-air onto the
-  short gate swing**, pump, and send the duck through the second ring gate onto the grand
-  garden. Skilled players can instead release *early* at max pump to land the **shortcut
-  isle** (2 stars) and leap straight to the garden, skipping the last swing entirely.
+### Session shell (all new)
+- **Main menu** over the live world: Play / Continue (jumps straight to the highest
+  unlocked region), Levels (with total-star counter), Settings. Keyboard is blocked on the
+  menu; the world idles as a backdrop.
+- **Pause menu** (button, plus auto-pause when the app is backgrounded): Resume · Restart
+  Level · Settings · Main Menu. Pausing freezes the sim, drops held inputs, suspends audio;
+  resuming requires the button (a user gesture, satisfying autoplay policies).
+- **Settings** — every control is functional and persisted: **SFX volume**, **music
+  volume**, **vibration** (haptic ticks for stars/checkpoints/pricks/grab prompts via
+  `navigator.vibrate`, silently no-op where unsupported), **graphics tier** (Battery =
+  DPR ≤ 1 + shadows off + 40-particle budget · Balanced = DPR ≤ 1.75 + 1024² shadows ·
+  High = DPR ≤ 2 + 2048² shadows — all applied live; Battery drops ~19 draw calls).
+- **Completion feedback**: victory screen now also announces a newly unlocked region
+  ("Region D — Cloud Garden unlocked!").
 
-### Hazards (first in the game)
-- **Thorn burr** — a slow-patrolling spiky ball (deep plum, spikes, pulsing red danger ring
-  projected on the ground under it). Touching it = a soft "prick" (burst + quiet sfx + flash)
-  and a respawn at the last checkpoint. Always placed on a wide platform with room to run
-  past or hop over, always after a recent checkpoint. One in Crystal Canyon, one in Cloud
-  Garden. No invisible collision, no cheap deaths.
-- Wind gusts and enemy-style hazards were considered and deliberately **not** added
-  (readability/fairness on touch, no suitable combat system exists — per spec).
+### Audio (new)
+- **Generative ambient music** (`Music.ts`): a calm C-pentatonic pluck melody over slow
+  sine pads, two alternating sections, lookahead-scheduled (250 ms tick), zero per-frame
+  cost, routed through a dedicated music bus (music volume + master mute both apply).
+  Starts on the first user gesture; stops on pause/backgrounding. Synthesized SFX are
+  unchanged from V0.8.
 
-### Fantasy landmarks & art direction
-- **Suspended ring gates** (2 in Cloud Garden): giant glowing rings that frame the actual
-  flight paths — the ferry drifts through one, the double-vine finale threads the other.
-- **Glowing puff plants** and oversized flowers across the garden; a **background suspension
-  bridge** in Crystal Canyon (InstancedMesh planks + tube rails, 5 draw calls).
-- Region identity in the UI: colored region overlines on the intro card and every picker row
-  (emerald / teal / orange / violet), plus a region dot on the level chip.
-- Each region keeps a distinct palette (sunny greens / airy mints / warm dusk / dusk-magic
-  lavender) over one shared art style: saturated caps, dark outlines, soft lighting,
-  layered parallax hills, restrained particles.
+### Android robustness
+- **Auto-pause on backgrounding** via `visibilitychange` (not just `blur`, which mobile
+  browsers fire unreliably) — inputs cleared, audio suspended, pause menu on return.
+- **Stuck-input fixes**: the contextual GRAB button can unmount mid-press (duck moves out
+  of range) — the shell now force-clears `interact` so the next tap can't be silently
+  eaten; per-button pointer-id sets make two-finger presses well-defined.
+- **Safe-area-aware HUD** (`env(safe-area-inset-top/bottom)`) — nothing hides under notches
+  or system bars; buttons keep ≥ 76 px touch targets.
+- **WebGL fallback**: a friendly message instead of a white screen if context creation fails.
 
-### Traversal challenges (new swing content, physics untouched)
-- **Long swing** (existing long vines), **elevated swing** (Canyon/Garden climbs),
-  **swing chain** (Isles S3→S4, **Garden S3→S4 and S5→S6**), **moving-platform landing**
-  (Canyon ferry/elevator, Garden lily ferry), and the new **optional shortcut** (Garden
-  high isle, expert release line) — every one verified reachable via the sim harness.
+### Performance (targeted, visuals preserved)
+- **Swing renderer now allocates zero objects per frame** — previously ~2k `Vector3`s/sec
+  at 60 Hz (GC churn on mid-range Android); scratch vectors + per-swing anchor reuse.
+- Confetti bursts share 5 materials instead of allocating one per particle; a live
+  **particle budget** trims bursts per graphics tier.
+- Quality tiers apply live (DPR cap, shadow resolution/disposal, particle cap).
+- Measured at the mobile viewport (390×844, Balanced): **L1 94 dc / 22.6k tris, L4 101 dc /
+  22.7k tris** — slightly *better* than V0.8's recorded 104/23.4k. Battery tier: −19 dc
+  (shadows off). See Performance below for the honest fps caveat.
+
+### Packaging (new)
+- **PWA manifest** (`public/manifest.webmanifest`: standalone display, theme #fff2d2,
+  orientation unlocked — portrait is the verified mobile layout, landscape works) +
+  **generated launcher icons** (192/512/maskable/apple-touch via `scripts/gen-icons.mjs`,
+  sharp-rasterized duck mascot). Verified: manifest, icons and apple-touch meta all serve
+  200 and are wired in `<head>`.
+- Android ships as a **TWA** (Bubblewrap) — commands below; Capacitor remains an
+  alternative. No permissions are required (vibration works without a permission in
+  TWA/WebView).
 
 ## Project structure
 
 ```
 src/components/game/
-  GameCanvas.tsx            React shell: canvas + touch UI + HUD + level chip/picker +
-                            intro cards + tips + completion flow + save v2
+  GameCanvas.tsx            React shell: menu / pause / settings / picker / completion,
+                            multi-finger-safe touch UI, safe-area HUD, WebGL fallback,
+                            haptics, save v2 + settings v1 persistence
   engine/
-    Game.ts                 orchestrator: loop, controller, camera (swing lead), swing
-                            chain, movers, checkpoints, stars, hazards, confetti, glints,
-                            creaks, loadLevel lifecycle, debug hook (+hazardX/hazardD)
+    Game.ts                 orchestrator: loop (pause-aware), controller, camera, swing
+                            chain, movers, checkpoints, stars, hazards, confetti budget,
+                            quality tiers, audio lifecycle, debug hook (+setPaused/
+                            setQuality/quality/music state)
     Physics.ts              AABB world, substepped axis-separated collision, corner
                             forgiveness, moving-platform motions + carrier
     Input.ts                unified keyboard/touch input with edge-triggered presses
     Duck.ts                 sculpted collectible-figure duck (v4) + procedural animation
-    Swing.ts                frame + hanging swings, pendulum (stops, caps, damping), dispose
+    Swing.ts                frame + hanging swings; zero-allocation rope placement
+    Music.ts                NEW: generative ambient music (lookahead scheduler)
     Level.ts                buildLevelRuntime: def → scene, stars, checkpoints, hazards, flag
-    LevelKit.ts             reusable builders + 4 themes (meadow/isles/canyon/garden) +
-                            ring gates, puff plants, rope bridges, thorn burr
+    LevelKit.ts             reusable builders + 4 themes + ring gates, puff plants, bridges,
+                            thorn burr
     levels.ts               the four LevelDefs (pure data + decor placement)
     Background.ts           sky, sun, layered hills, cloud sea — themeable per level
-    Sfx.ts                  WebAudio synth SFX (+creak/glint/prick, variations) + mute
-scripts/game-tests-v6.js    deterministic L1–L3 test harness (window.__T, sim-based)
-scripts/game-tests-v8.js    V0.8 additions: L4 scenarios + crossLevel4 (extends T.all)
-scripts/export-duck.ts      exports the duck to download/duck.glb
-download/screens/v8/        V0.8 verification screenshots
+    Sfx.ts                  WebAudio synth SFX + per-bus volumes, suspend/resume, mute
+public/manifest.webmanifest  PWA manifest (NEW)
+public/icon-*.png et al      generated launcher icons (NEW)
+scripts/game-tests-v6.js     deterministic L1–L3 harness (window.__T, sim-based)
+scripts/game-tests-v8.js     L4 scenarios + crossLevel4 (extends T.all)
+scripts/game-tests-v9.js     NEW: pause/resume, respawn-while-paused, quality tiers,
+                             level-switch leak loop, multi-touch buttons, stuck-tap guard
+scripts/gen-icons.mjs        NEW: sharp-based launcher icon generation
+scripts/export-duck.ts       exports the duck to download/duck.glb
+download/screens/v9/         V0.9 verification screenshots
 ```
 
-## Android build (Capacitor)
+## Android packaging
+
+### TWA (recommended — no engine wrapper needed)
+The game is a PWA, so the Android app is a Trusted Web Activity generated from the manifest:
 
 ```bash
-bun add -d @capacitor/cli && bun add @capacitor/core @capacitor/android
-npx cap init "Project Duck" com.example.projectduck --web-dir=.next/static  # or a static export dir
-bun run build && npx cap add android
-npx cap open android   # then Build > Generate Signed APK/AAB in Android Studio
+bunx @bubblewrap/cli init --manifest https://YOUR-HOST/manifest.webmanifest
+# prompts: application id (e.g. com.duckadventure.app), version code/name (1 / 1.0.0),
+# display mode standalone, theme color #fff2d2 — then:
+bunx @bubblewrap/cli build          # produces app-release-signed.apk (+ .aab via --skipPwaValidation)
+bunx @bubblewrap/cli install        # adb install to a connected device
 ```
 
-For a quick test without Android Studio, the game is fully playable in mobile Chrome/Firefox;
-add it to the home screen for a fullscreen, app-like experience.
+Notes: `display: standalone`, `orientation: any` (portrait verified), icons 192/512 +
+maskable, **no permissions**, `theme_color`/`background_color` #fff2d2. Version
+code/versionName live in the Bubblewrap `twa-manifest.json` per release. Debug builds:
+`bunx @bubblewrap/cli build --skipPwaValidation --manifest ... ` with the debug keystore.
+
+### Capacitor (alternative)
+```bash
+bun add -d @capacitor/cli && bun add @capacitor/core @capacitor/android
+npx cap init "Duck Adventure" com.duckadventure.app --web-dir=.next/static
+bun run build && npx cap add android
+npx cap open android   # Build > Generate Signed APK/AAB
+```
+
+Without any wrapper the game is fully playable in mobile Chrome/Firefox; "Add to Home
+Screen" gives the fullscreen app-like experience (manifest-driven).
 
 ## Actual tests performed (headless browser, agent-driven, deterministic `sim()` harness)
 
-`scripts/game-tests-v6.js` (L1–L3, from V0.6/V0.7, ferry boarding + hop-off hardened this
-round) plus `scripts/game-tests-v8.js` (L4 + crossLevel4) injected into the running page;
-`window.__T.all()` runs all 14 scenarios. **Two consecutive full runs: ALL GREEN.**
+`scripts/game-tests-v6.js` + `game-tests-v8.js` (14 scenarios, V0.8 baseline) and the new
+`game-tests-v9.js` (6 release-shell scenarios) injected into the running page.
+
+**V0.8 gameplay suite — two consecutive full runs after the V0.9 changes: ALL GREEN (14/14).**
 
 | # | Scenario | Result |
 |---|----------|--------|
@@ -162,55 +208,74 @@ round) plus `scripts/game-tests-v8.js` (L4 + crossLevel4) injected into the runn
 | 13 | **crossLevel4**: win L1 → L4 pristine (hazards=1, swings=6) → back → reload ×2 | PASS — no stale state |
 | 14 | **Reset loop**: 6× (grab/release cycles + fullReset) | PASS — bounded, no NaN |
 
-Manual probes this round: multi-touch run+jump at 390×844 (run holds, jump fires), ferry
-carrier ride sampled step-by-step (duck tracks the pad exactly), burr prick → checkpoint
-respawn, release trajectory traces.
+**V0.9 release-shell suite: 6/6 PASS.**
 
-Visual QA (download/screens/v8/): garden start / burr isle / ferry + ring gate / finale
-launch / grand garden / canyon burr + rope bridge / region picker / mobile 390×844. Fresh
-reload console is clean; ESLint passes.
+| Scenario | Verifies | Result |
+|----------|----------|--------|
+| `v9_pauseSwing` | pause flag set/cleared; pendulum state survives a pause cycle intact (omega 2.41 preserved); still rideable after | PASS |
+| `v9_pauseRespawn` | respawn while paused keeps the pause flag, lands cleanly at spawn | PASS |
+| `v9_quality` | Battery = shadows off; tiers ordered by DPR cap; live switch | PASS |
+| `v9_levelLoop` | 8 level hops (incl. repeat loads): correct swing counts (2/5/4/6), no cp/star leaks, no NaN | PASS |
+| `v9_multiTouch` | two synthetic pointers on one button: lifting one keeps the input (vx −4.2 held), lifting both releases (vx 0) | PASS |
+| `v9_hudPrompt` | abrupt input clear mid-press cannot eat the next grab (the old stuck-tap bug) | PASS |
 
-### Game & harness issues found and fixed this round
-- **Moving-platform visuals floated ~0.33u** under the duck (cap center vs collision top
-  mismatch, pre-existing since V0.6) — the kit now aligns the cap top with the collision top.
-- **S1 climb wall-clip** (L4): the release trajectory hit the high garden's left wall face
-  and lost all momentum mid-air — the platform was lowered to 1.0u so every honest release
-  clears the lip; verified by trajectory trace.
-- **Ferry boarding was jump-timing-fragile** → redesigned as a **walk-on pad** (0.02u lip,
-  corner-forgiveness walk-on) — deterministic, no jump needed.
-- **Burr vs pad overlap** (L4): the ferry's left extreme originally came within 0.4u of the
-  burr patrol and pricked riding ducks — the pad travel was retuned.
-- **L3 burr zone was wider than a jump arc** (2.64u vs 2.07u safe band — unhopppable) → the
-  burr was lowered to a grounded thorn-bush look (top 1.34u) and its patrol tightened; the
-  harness now hops it with a relative-distance trigger.
-- **Harness**: ferry boarding/hop-off rewritten (stop-and-wait, extreme-phase triggers,
-  run-up momentum checks, genuine on-slab verification, retry); L4 drive machine gained
-  momentum-decay before the burr hop and phase-flow fixes. The S2 release momentum carrying
-  into the sprint (making hop flight length unpredictable) is documented and handled.
+**Manual UI probes (real CDP clicks/taps, fresh page loads):**
+- Menu → PLAY/CONTINUE → HUD + JUMP render, input unblocked (duck runs at 4.2 u/s) ✓
+- Pause → overlay + engine paused + touch buttons hidden → RESUME → unpaused ✓
+- Restart Level → back to spawn, cp −1, stars 0 ✓ · Main Menu → menu shown ✓
+- Settings: SFX slider (native value setter) → persisted; **Battery tier applies live
+  (shadows:false in the same frame)**; settings survive reload and re-apply at boot ✓
+- **Save integrity**: corrupted `duck-save-v2` → game boots to menu, no crash; partial save
+  (missing level records) → normalized with empty records, unlocked preserved ✓
+- **Music lifecycle**: starts on PLAY (user gesture), suspends on pause, resumes on resume ✓
+- **Auto-pause on backgrounding**: switching tabs fires the handler → engine paused +
+  pause overlay on return → RESUME works ✓
+- PWA: manifest/icons/apple-touch/theme-color present and 200 on dev **and** production
+  standalone server (`bun run build` + `server.js` smoke test) ✓
+- Mobile 390×844 screenshots: menu / playing / pause / settings (download/screens/v9/) ✓
+- Fresh reload console clean; ESLint clean on all touched files; `tsc` clean for the game
+  (repo-scaffold files in `examples/`/`skills/` have pre-existing errors outside the build).
 
-### Performance measurement (honest numbers)
-- Headless sandbox rendering is **software-rasterized** (SwiftShader): measured ~9 fps at
-  390×844 in V0.7 — fill-rate-bound CPU rendering, **not representative of any real device
-  GPU**; no real-device measurement was possible in this sandbox.
-- Scene budget at the mobile viewport (L4, the heaviest region): **104 draw calls, ~23.4k
-  triangles**, one 1024² shadow map (adaptive), pixel ratio capped at 2, particles capped at
-  80. The new decor added ~10 draw calls vs V0.7 (94). The rope bridge uses InstancedMesh;
-  ring gates and burrs reuse shared geometries per level.
+### Game bugs found and fixed this round
+- **Stuck GRAB button** (mobile, pre-existing): the contextual button could unmount while
+  pressed (duck swings out of range) leaving `interact` held — the *next* tap produced no
+  edge and was silently dropped. Fixed in the shell (force-clear on prompt hide) and made
+  structural (pointer-id sets + guard).
+- **Prompt lingering under the win overlay** (cosmetic, pre-existing): the contextual
+  GRAB/LET GO button stayed visible after crossing the flag — now cleared on victory.
+- **`Swing.place()` per-frame allocations** (perf, pre-existing): 2 `new Vector3` + 1
+  `clone()` per rope per settle step ≈ 2k objects/sec — replaced with module scratch
+  vectors; `seatAnchor()` reuses a per-swing scratch object.
+- Two V0.9 harness logic bugs caught by the harness itself (wrong L3 swing-count
+  expectation; a scenario tapping during the release re-grab cooldown — a state the real
+  GRAB button never shows) — fixed in the harness, no game changes.
+
+## Performance measurement (honest numbers)
+
+- Headless sandbox rendering is **software-rasterized** (SwiftShader): measured ~4 fps at
+  1280×720 — fill-rate-bound CPU rendering, **not representative of any real device GPU**;
+  no real-device measurement was possible in this sandbox.
+- Scene budget at the mobile viewport 390×844 (Balanced): **L1 94 / L4 101 draw calls**,
+  ~22.6–22.7k triangles, 1024² shadow map, DPR ≤ 1.75, particles ≤ 60. High tier adds a
+  2048² shadow map and DPR ≤ 2. Battery tier: shadows off, DPR ≤ 1, particles ≤ 40,
+  **−19 draw calls** measured.
+- Draw-call deltas vs V0.8 at the same viewport: **slightly better** (101 vs 104 on L4),
+  confirming the shell additions cost nothing in the scene.
 
 ## Remaining issues / known limitations
 
-- All four levels are fully verified by the sim harness; feel-tuning judgments (pose
-  aesthetics, effect restraint) are based on screenshots and sim review, **not human
-  playtest sessions**.
-- **Android device testing was NOT performed** (no device in sandbox); the Capacitor path
-  above is documented but untested on hardware, and the fps numbers above are
-  software-renderer numbers, not device frame rates.
-- No music (synthesized SFX only), same scope boundary as V0.5–V0.7.
-- The L4 **expert shortcut** lands on the high isle via a ledge-catch that reads as a small
-  scramble (deterministic, verified); the release window is genuinely tight (expert-only).
+- **No Android device testing was performed** (no device/SDK in the sandbox — `gradle`,
+  `sdkmanager` and `ANDROID_HOME` are absent; only `java` exists). The TWA commands above
+  are documented but **unexecuted**; no APK was produced or claimed. Real-device fps,
+  touch feel and notch behavior remain unverified on hardware.
+- Feel-tuning judgments are based on screenshots and sim review, **not human playtest
+  sessions**.
+- Music is a single gentle generative loop — no per-region themes or stingers (deliberate
+  scope: one mood, zero asset weight).
+- The L4 **expert shortcut** release window remains genuinely tight (expert-only, verified).
 - On 390px-wide phones the "BEST" star tag can slightly crowd the level chip (cosmetic).
-- The L4 finale S5→S6 chain needs a mid-arc release (window ~0.55–0.95 rad at pump cap);
-  a too-early release wall-clips the shortcut isle instead (which is the expert route) and
-  a too-weak release falls to the checkpoint — fair, but the timing window is demanding.
-- Wind gusts, a fourth hazard type and Region-D collectible routes beyond the current 10
-  stars were scoped out to keep every shipped element verified (spec: quality over quantity).
+- Taps on the GRAB button during a re-grab cooldown are ignored by design (the button is
+  hidden then); the sim harness must emulate that visibility (documented in the v9 harness).
+- Confetti still uses individual meshes (shared geometry + shared materials); a pooled
+  InstancedMesh would shave a few more draw calls during bursts (micro-optimization, not
+  scheduled).

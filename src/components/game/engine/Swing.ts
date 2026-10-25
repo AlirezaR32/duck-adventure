@@ -32,6 +32,11 @@ export interface SwingCfg {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
+// scratch vectors reused by place() every sim step — allocating here was
+// ~2k Vector3s/sec on mobile (GC churn) for zero benefit
+const sA = new THREE.Vector3()
+const sB = new THREE.Vector3()
+const sDir = new THREE.Vector3()
 
 function flatMat(color: number): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, flatShading: true })
@@ -240,14 +245,14 @@ export class Swing {
     this.seat.rotation.z = this.theta
     for (let i = 0; i < 2; i++) {
       const z = this.anchorZ[i]
-      const a = new THREE.Vector3(this.pivotX, this.pivotY, z)
-      const b = new THREE.Vector3(sx, sy + 0.04, z)
-      const dir = b.clone().sub(a)
-      const len = Math.max(0.05, dir.length())
+      sA.set(this.pivotX, this.pivotY, z)
+      sB.set(sx, sy + 0.04, z)
+      sDir.subVectors(sB, sA)
+      const len = Math.max(0.05, sDir.length())
       const rope = this.ropes[i]
-      rope.position.copy(a).addScaledVector(dir, 0.5)
+      rope.position.copy(sA).addScaledVector(sDir, 0.5)
       rope.scale.set(1, len, 1)
-      rope.quaternion.setFromUnitVectors(UP, dir.normalize())
+      rope.quaternion.setFromUnitVectors(UP, sDir.normalize())
     }
   }
 
@@ -291,12 +296,14 @@ export class Swing {
     this.bumpT = 1
   }
 
-  /** Seat center position (duck sits on top of this). */
+  /** Seat center position (duck sits on top of this). Reuses one scratch
+   *  object per swing — callers must read it within the same iteration. */
+  private anchorScratch = { x: 0, y: 0 }
+
   seatAnchor(): { x: number; y: number } {
-    return {
-      x: this.pivotX + this.L * Math.sin(this.theta),
-      y: this.pivotY - this.L * Math.cos(this.theta),
-    }
+    this.anchorScratch.x = this.pivotX + this.L * Math.sin(this.theta)
+    this.anchorScratch.y = this.pivotY - this.L * Math.cos(this.theta)
+    return this.anchorScratch
   }
 
   /** Tangential velocity of the seat — momentum is preserved on release. */
