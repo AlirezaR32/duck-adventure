@@ -281,6 +281,11 @@ export class Swing {
     }
   }
 
+  /** Current grab-range state (lets the game edge-detect "just became reachable"). */
+  get inRangeNow(): boolean {
+    return this.ringVisible
+  }
+
   /** Happy seat bump when grabbed. */
   bump(): void {
     this.bumpT = 1

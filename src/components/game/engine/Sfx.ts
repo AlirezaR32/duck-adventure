@@ -79,6 +79,8 @@ export class Sfx {
 
   jump(): void {
     this.tone({ f0: 300, f1: 660, dur: 0.16, type: 'triangle', vol: 0.15 })
+    // a whisper of takeoff texture so the jump leaves the ground audibly
+    this.noise(0.05, 0.035, 1200, 400)
   }
   land(): void {
     this.tone({ f0: 150, f1: 82, dur: 0.11, type: 'sine', vol: 0.2 })
@@ -86,7 +88,8 @@ export class Sfx {
   }
   /** Tiny alternating footstep tick — deliberately very quiet. */
   step(alt: boolean): void {
-    this.noise(0.035, 0.028, alt ? 2100 : 1700, 500)
+    const v = 0.94 + Math.random() * 0.12 // small natural variation
+    this.noise(0.035, 0.028, (alt ? 2100 : 1700) * v, 500)
   }
   grab(): void {
     this.tone({ f0: 520, f1: 330, dur: 0.1, type: 'triangle', vol: 0.16 })
@@ -98,8 +101,9 @@ export class Sfx {
   }
   /** Star pickup: a happy two-note blip, brighter than the grab sparkle. */
   collect(): void {
-    this.tone({ f0: 990, f1: 990, dur: 0.07, type: 'triangle', vol: 0.11 })
-    this.tone({ f0: 1480, f1: 1480, dur: 0.12, type: 'triangle', vol: 0.1, delay: 0.07 })
+    const v = 0.97 + Math.random() * 0.06
+    this.tone({ f0: 990 * v, f1: 990 * v, dur: 0.07, type: 'triangle', vol: 0.11 })
+    this.tone({ f0: 1480 * v, f1: 1480 * v, dur: 0.12, type: 'triangle', vol: 0.1, delay: 0.07 })
   }
   /** Warm two-note "checkpoint saved" chime. */
   chime(): void {
@@ -109,6 +113,16 @@ export class Sfx {
   /** Soft airy whoosh when the swing carries the duck through the arc fast. */
   whoosh(): void {
     this.noise(0.3, 0.07, 700, 2000)
+  }
+  /** Subtle wooden rope creak while working the swing hard. Very quiet. */
+  creak(): void {
+    const f = 96 + Math.random() * 40
+    this.tone({ f0: f, f1: f * 0.82, dur: 0.12, type: 'sawtooth', vol: 0.028 })
+    this.noise(0.1, 0.012, 500, 260)
+  }
+  /** Soft two-tone glint when a swing first comes into grab range. */
+  glint(): void {
+    this.tone({ f0: 1180, f1: 1560, dur: 0.09, type: 'sine', vol: 0.045 })
   }
   release(): void {
     this.noise(0.24, 0.13, 500, 2400)

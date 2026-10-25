@@ -1,0 +1,936 @@
+     1→/**
+     2→ * Project Duck — game orchestrator (V0.6, multi-level).
+     3→ *
+     4→ * Fixed-timestep simulation (1/60) with an accumulator. The duck is a
+     5→ * kinematic body: gravity, jump with anticipation, coyote time and jump
+     6→ * buffering. Swinging is the star — grab, pump, release, fly, land:
+     7→ *
+     8→ *  - every swing is independent (own pivot, length, damping, grab range)
+     9→ *  - release preserves the pendulum's tangential momentum
+    10→ *  - a short re-grab cooldown on the swing you just left prevents accidental
+    11→ *    re-attaches, while any OTHER swing in range can be grabbed instantly
+    12→ *  - explicit checkpoint posts activate as you pass them; respawning resets
+    13→ *    physics, swing attachments and input safely (never mid-air stale state)
+    14→ *  - moving platforms carry the duck via the physics carrier (deterministic)
+    15→ *
+    16→ * V0.6 adds a reusable level system: levels are data (levels.ts) built by
+    17→ * buildLevelRuntime; loadLevel() tears the previous level down completely
+    18→ * (scene objects, physics boxes, swings, progression) so repeated switches
+    19→ * and restarts can never leak stale state. One Game instance serves the
+    20→ * whole session — input handlers and the RAF loop are never duplicated.
+    21→ */
+    22→
+    23→import * as THREE from 'three'
+    24→import { PhysicsWorld, type Body, type Box } from './Physics'
+    25→import { InputState, type InputName } from './Input'
+    26→import { Duck } from './Duck'
+    27→import { Swing } from './Swing'
+    28→import { Background } from './Background'
+    29→import { buildLevelRuntime, type LevelHandle } from './Level'
+    30→import { LEVELS, type CheckpointDef, type LevelDef, type PlatDef } from './levels'
+    31→import { Sfx } from './Sfx'
+    32→
+    33→const T = {
+    34→  gravity: -30,
+    35→  maxFall: -24,
+    36→  moveSpeed: 4.2,
+    37→  groundAccel: 34,
+    38→  groundDecel: 38,
+    39→  airAccel: 15,
+    40→  airDrag: 0.6, // light: preserve swing-release momentum through the air
+    41→  jumpVel: 11.2,
+    42→  coyote: 0.09,
+    43→  buffer: 0.12,
+    44→  colliderW: 0.6,
+    45→  colliderH: 0.78,
+    46→  swingPump: 4.6,
+    47→  releaseBoost: 1.12,
+    48→  forwardKick: 1.15,
+    49→  regrabCooldown: 0.24,
+    50→  starRadius: 0.95,
+    51→  fixedDt: 1 / 60,
+    52→}
+    53→
+    54→function moveToward(v: number, target: number, maxDelta: number): number {
+    55→  return v < target ? Math.min(v + maxDelta, target) : Math.max(v - maxDelta, target)
+    56→}
+    57→
+    58→function clamp(v: number, lo: number, hi: number): number {
+    59→  return Math.max(lo, Math.min(hi, v))
+    60→}
+    61→
+    62→export interface RunStats {
+    63→  stars: number
+    64→  starsTotal: number
+    65→  levelIndex: number
+    66→  levelName: string
+    67→  /** Seconds from level start to the flag (fixed-step clock). */
+    68→  time: number
+    69→}
+    70→
+    71→export interface GameCallbacks {
+    72→  onPrompt(visible: boolean, label: string): void
+    73→  onVictory(won: boolean, stats?: RunStats): void
+    74→  onFlash(): void
+    75→  /** One-shot contextual teaching tips (ids: 'pump', 'checkpoint', 'star'). */
+    76→  onTip(id: string): void
+    77→  /** Lightweight progression events for HUD counters. */
+    78→  onStars(count: number, total: number): void
+    79→  onCheckpoint(index: number, total: number): void
+    80→  /** Fired after a level finished loading (also on construction). */
+    81→  onLevelStart(index: number, def: LevelDef): void
+    82→}
+    83→
+    84→interface DebugApi {
+    85→  press(name: InputName, down: boolean): void
+    86→  tap(name: 'jump' | 'interact'): void
+    87→  warp(x: number, y: number): void
+    88→  /** Sim-locked: release the active swing on the first sim step matching the window. */
+    89→  releaseWhen(minOmega: number, loTheta: number, hiTheta: number): void
+    90→  respawnNow(): void
+    91→  fullReset(): void
+    92→  /** Teleport just above a point, zero velocity (for arc verification). */
+    93→  place(x: number, y: number): void
+    94→  /** Deterministic testing: advance exactly n fixed sim steps (visuals kept coherent). */
+    95→  sim(n: number): void
+    96→  /** Load a level by index (used by the UI and the test harness). */
+    97→  loadLevel(i: number): void
+    98→  state(): Record<string, number | boolean>
+    99→}
+   100→
+   101→interface Particle {
+   102→  mesh: THREE.Mesh
+   103→  vx: number
+   104→  vy: number
+   105→  spin: number
+   106→  life: number
+   107→  max: number
+   108→  grow: number
+   109→  gravity: number
+   110→}
+   111→
+   112→export class Game {
+   113→  readonly input = new InputState()
+   114→  readonly sfx = new Sfx()
+   115→
+   116→  private cb: GameCallbacks
+   117→  private canvas: HTMLCanvasElement
+   118→  private renderer: THREE.WebGLRenderer
+   119→  private scene = new THREE.Scene()
+   120→  private camera: THREE.PerspectiveCamera
+   121→  private world = new PhysicsWorld()
+   122→  private duck = new Duck()
+   123→  private swings: Swing[] = []
+   124→  private activeSwing: Swing | null = null
+   125→  private bg: Background
+   126→  /** Built in the constructor via loadLevel() before the first tick. */
+   127→  private level!: LevelHandle
+   128→  private levelIdx = 0
+   129→  private def: LevelDef = LEVELS[0]
+   130→  private plats: PlatDef[] = []
+   131→  private checkpoints: CheckpointDef[] = []
+   132→  private flagX = 0
+   133→  private spawnX = 0.4
+   134→  private killY = -8
+   135→  private moverBoxes: Box[] = []
+   136→  private levelTime = 0
+   137→  private dirLight: THREE.DirectionalLight
+   138→
+   139→  private body: Body
+   140→  private swinging = false
+   141→  private coyote = 0
+   142→  private jumpBuf = 0
+   143→  private won = false
+   144→  private hopTimer = 0
+   145→  private promptLabel = ''
+   146→  private tipSent: Record<string, boolean> = { pump: false, star: false }
+   147→  private debugRelease: { minOmega: number; lo: number; hi: number } | null = null
+   148→
+   149→  // ---- swing chain state ----
+   150→  private regrabSwing: Swing | null = null
+   151→  private regrabT = 0
+   152→  private whooshT = 0
+   153→
+   154→  // ---- progression state ----
+   155→  private cpIndex = -1 // latest activated checkpoint
+   156→  private starsGot = 0
+   157→  private confetti: Particle[] = []
+   158→  private confettiGeo = new THREE.OctahedronGeometry(0.05, 0)
+   159→  private confettiColors = [0xffb65c, 0xff8ba0, 0x9fd8e8, 0xb4e97c, 0xffd166]
+   160→
+   161→  private camX = 0.4
+   162→  private camY = 1.0
+   163→  private camZ = 11
+   164→  private camZCur = 11
+   165→  private smVx = 0 // smoothed horizontal velocity for camera look-ahead
+   166→  private time = 0
+   167→  private acc = 0
+   168→  private lastT = 0
+   169→  private raf = 0
+   170→  private disposed = false
+   171→
+   172→  private onKeyDown = (e: KeyboardEvent) => this.key(e, true)
+   173→  private onKeyUp = (e: KeyboardEvent) => this.key(e, false)
+   174→  private onBlur = () => this.input.clearAll()
+   175→  private onResize = () => this.resize()
+   176→
+   177→  constructor(canvas: HTMLCanvasElement, cb: GameCallbacks, startLevel = 0) {
+   178→    this.canvas = canvas
+   179→    this.cb = cb
+   180→
+   181→    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+   182→    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+   183→    this.renderer.shadowMap.enabled = true
+   184→    this.renderer.shadowMap.type = THREE.PCFShadowMap
+   185→    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+   186→    this.renderer.toneMappingExposure = 1.06
+   187→
+   188→    this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 160)
+   189→
+   190→    // ---- lights ----
+   191→    const hemi = new THREE.HemisphereLight(0xfff4de, 0x7fae6a, 0.95)
+   192→    this.dirLight = new THREE.DirectionalLight(0xffe7bd, 2.2)
+   193→    this.dirLight.castShadow = true
+   194→    this.dirLight.shadow.mapSize.set(2048, 2048)
+   195→    this.dirLight.shadow.camera.near = 1
+   196→    this.dirLight.shadow.camera.far = 44
+   197→    this.dirLight.shadow.camera.left = -9
+   198→    this.dirLight.shadow.camera.right = 9
+   199→    this.dirLight.shadow.camera.top = 9
+   200→    this.dirLight.shadow.camera.bottom = -7
+   201→    this.dirLight.shadow.bias = -0.0004
+   202→    this.dirLight.shadow.normalBias = 0.02
+   203→    this.scene.add(hemi, this.dirLight, this.dirLight.target)
+   204→
+   205→    // ---- world ----
+   206→    this.bg = new Background(this.scene)
+   207→    this.scene.add(this.duck.root)
+   208→    this.scene.add(this.duck.shadowMesh)
+   209→
+   210→    this.body = {
+   211→      x: 0.4,
+   212→      y: T.colliderH / 2,
+   213→      hw: T.colliderW / 2,
+   214→      hh: T.colliderH / 2,
+   215→      vx: 0,
+   216→      vy: 0,
+   217→      onGround: false,
+   218→      carrier: null,
+   219→    }
+   220→
+   221→    this.loadLevel(startLevel)
+   222→
+   223→    // ---- events ----
+   224→    window.addEventListener('keydown', this.onKeyDown)
+   225→    window.addEventListener('keyup', this.onKeyUp)
+   226→    window.addEventListener('blur', this.onBlur)
+   227→    window.addEventListener('resize', this.onResize)
+   228→    this.resize()
+   229→
+   230→    this.installDebugHook()
+   231→
+   232→    // ---- loop ----
+   233→    this.lastT = performance.now()
+   234→    this.raf = requestAnimationFrame(this.tick)
+   235→  }
+   236→
+   237→  // ============================ level lifecycle ============================
+   238→
+   239→  /** Tear the current level down completely, then build level `idx` fresh. */
+   240→  loadLevel(idx: number): void {
+   241→    const i = Math.max(0, Math.min(LEVELS.length - 1, Math.floor(idx)))
+   242→    this.levelIdx = i
+   243→    const def = LEVELS[i]
+   244→    this.def = def
+   245→
+   246→    // ---- teardown: scene objects, swings, physics ----
+   247→    if (this.level) this.level.dispose()
+   248→    for (const s of this.swings) {
+   249→      this.scene.remove(s.group)
+   250→      s.dispose()
+   251→    }
+   252→    this.swings = []
+   253→    this.world.reset()
+   254→
+   255→    // ---- build ----
+   256→    this.level = buildLevelRuntime(this.scene, this.world, def)
+   257→    for (const cfg of def.swings) {
+   258→      const s = new Swing(cfg)
+   259→      this.swings.push(s)
+   260→      this.scene.add(s.group)
+   261→    }
+   262→    this.moverBoxes = this.world.boxes.filter((b) => this.world.motionOf(b) !== undefined)
+   263→
+   264→    // ---- per-level play state (no stale forces, attachments or counters) ----
+   265→    this.plats = def.platforms
+   266→    this.checkpoints = def.checkpoints
+   267→    this.flagX = def.flagX
+   268→    this.spawnX = def.spawnX
+   269→    this.killY = def.killY
+   270→    this.levelTime = 0
+   271→    this.cpIndex = -1
+   272→    this.starsGot = 0
+   273→    this.tipSent = { pump: false, star: false }
+   274→    this.clearConfetti()
+   275→    this.won = false
+   276→    this.hopTimer = 0
+   277→    this.swinging = false
+   278→    this.activeSwing = null
+   279→    this.regrabSwing = null
+   280→    this.regrabT = 0
+   281→    this.whooshT = 0
+   282→    this.debugRelease = null
+   283→    this.input.clearAll()
+   284→
+   285→    const b = this.body
+   286→    b.x = def.spawnX
+   287→    b.y = T.colliderH / 2
+   288→    b.vx = 0
+   289→    b.vy = 0
+   290→    b.onGround = false
+   291→    b.carrier = null
+   292→    this.duck.facing = 1
+   293→    this.camX = def.spawnX
+   294→    this.camY = 1.0
+   295→    this.smVx = 0
+   296→
+   297→    this.bg.applyTheme(def.theme)
+   298→    this.cb.onStars(0, def.stars.length)
+   299→    this.cb.onVictory(false)
+   300→    this.cb.onLevelStart(i, def)
+   301→  }
+   302→
+   303→  private clearConfetti(): void {
+   304→    for (const p of this.confetti) {
+   305→      this.scene.remove(p.mesh)
+   306→      ;(p.mesh.material as THREE.Material).dispose()
+   307→    }
+   308→    this.confetti = []
+   309→  }
+   310→
+   311→  // ============================ main loop ============================
+   312→
+   313→  private tick = (now: number): void => {
+   314→    if (this.disposed) return
+   315→    this.raf = requestAnimationFrame(this.tick)
+   316→    let dt = (now - this.lastT) / 1000
+   317→    this.lastT = now
+   318→    dt = Math.min(dt, 0.1)
+   319→    this.acc += dt
+   320→    let steps = 0
+   321→    while (this.acc >= T.fixedDt && steps < 5) {
+   322→      this.step(T.fixedDt)
+   323→      this.acc -= T.fixedDt
+   324→      steps++
+   325→    }
+   326→    if (steps === 5) this.acc = 0
+   327→    this.bg.update(dt, this.camX)
+   328→    this.level.update(this.time)
+   329→    for (const s of this.swings) s.tickVisual(dt, this.time)
+   330→    this.tickConfetti(dt)
+   331→    this.renderer.render(this.scene, this.camera)
+   332→  }
+   333→
+   334→  private step(dt: number): void {
+   335→    this.time += dt
+   336→    // moving platforms advance once per fixed step, before anything moves;
+   337→    // a grounded duck then rides its carrier by the platform's exact delta
+   338→    this.world.updateMotions(this.time)
+   339→    const b = this.body
+   340→    if (b.onGround && b.carrier) {
+   341→      const m = this.world.motionOf(b.carrier)
+   342→      if (m) {
+   343→        b.x += m.dx
+   344→        b.y += m.dy
+   345→      }
+   346→    }
+   347→    if (!this.won) this.levelTime += dt
+   348→    const interact = this.input.consumeInteract()
+   349→    const jump = this.input.consumeJump()
+   350→    this.regrabT = Math.max(0, this.regrabT - dt)
+   351→    if (this.regrabT === 0) this.regrabSwing = null
+   352→
+   353→    if (this.won) {
+   354→      // celebratory hops at the flag
+   355→      this.hopTimer -= dt
+   356→      if (b.onGround && this.hopTimer <= 0) {
+   357→        b.vy = 7.2
+   358→        b.onGround = false
+   359→        this.duck.onJump()
+   360→        this.hopTimer = 0.55
+   361→      }
+   362→      b.vx = moveToward(b.vx, 0, T.groundDecel * dt)
+   363→      const was = b.onGround
+   364→      b.vy = Math.max(T.maxFall, b.vy + T.gravity * dt)
+   365→      this.world.move(b, dt, was)
+   366→      for (const s of this.swings) s.settle(dt, this.time)
+   367→      this.syncDuck(dt)
+   368→      this.updateCamera(dt)
+   369→      return
+   370→    }
+   371→
+   372→    if (this.swinging && this.activeSwing) {
+   373→      const sw = this.activeSwing
+   374→      // pumping: pushing in the direction of motion adds energy (leg pumping)
+   375→      const dir = this.input.dir()
+   376→      const align = dir !== 0 ? (Math.sign(sw.omega) === dir ? 1 : 0.25) : 0
+   377→      const pump = dir * align * T.swingPump
+   378→      sw.update(dt, pump, 30)
+   379→      for (const s of this.swings) if (s !== sw) s.settle(dt, this.time)
+   380→      if (this.debugRelease) {
+   381→        const d = this.debugRelease
+   382→        if (sw.omega > d.minOmega && sw.theta > d.lo && sw.theta < d.hi) {
+   383→          this.debugRelease = null
+   384→          this.release()
+   385→        }
+   386→      }
+   387→      const a = sw.seatAnchor()
+   388→      b.x = a.x
+   389→      b.y = a.y + 0.08 // feet rest on the seat board
+   390→      // track tangential velocity so release preserves momentum
+   391→      b.vx = sw.omega * sw.L * Math.cos(sw.theta)
+   392→      b.vy = sw.omega * sw.L * Math.sin(sw.theta)
+   393→      this.setPrompt('LET GO')
+   394→      if (jump || interact) this.release()
+   395→      // airy whoosh when sweeping through the bottom of the arc at speed
+   396→      this.whooshT -= dt
+   397→      if (Math.abs(sw.omega) > 3.1 && Math.abs(sw.theta) < 0.24 && this.whooshT <= 0) {
+   398→        this.sfx.whoosh()
+   399→        this.whooshT = 0.6
+   400→      }
+   401→      this.collectStars()
+   402→      this.syncDuck(dt, pump / T.swingPump)
+   403→      this.updateCamera(dt)
+   404→      return
+   405→    }
+   406→
+   407→    // ---- horizontal movement ----
+   408→    const dir = this.input.dir()
+   409→    if (dir !== 0) {
+   410→      const target = dir * T.moveSpeed
+   411→      const sameDir = Math.sign(b.vx) === dir
+   412→      const over = Math.abs(b.vx) > T.moveSpeed + 0.05
+   413→      if (over && sameDir) {
+   414→        // preserve hard-earned momentum (e.g. swing releases); settle
+   415→        // gently back to run speed only once grounded
+   416→        if (b.onGround) b.vx = moveToward(b.vx, target, 8 * dt)
+   417→      } else {
+   418→        const rate = b.onGround ? T.groundAccel : T.airAccel
+   419→        b.vx = moveToward(b.vx, target, rate * dt)
+   420→      }
+   421→    } else {
+   422→      b.vx = moveToward(b.vx, 0, (b.onGround ? T.groundDecel : T.airDrag) * dt)
+   423→    }
+   424→
+   425→    // unattended swings keep settling/swaying between grabs — released
+   426→    // swings must actually lose energy, otherwise they spin forever and
+   427→    // their seats never come back within grab range
+   428→    for (const s of this.swings) s.settle(dt, this.time)
+   429→
+   430→    // ---- jump with coyote time + input buffer (no double jumps) ----
+   431→    this.coyote = b.onGround ? T.coyote : Math.max(0, this.coyote - dt)
+   432→    if (jump) this.jumpBuf = T.buffer
+   433→    else this.jumpBuf = Math.max(0, this.jumpBuf - dt)
+   434→    if (this.jumpBuf > 0 && this.coyote > 0 && b.vy <= 0.01) {
+   435→      b.vy = T.jumpVel
+   436→      this.jumpBuf = 0
+   437→      this.coyote = 0
+   438→      b.onGround = false
+   439→      this.duck.onJump()
+   440→      this.sfx.jump()
+   441→    }
+   442→
+   443→    // ---- gravity + collide ----
+   444→    const fallBefore = b.vy
+   445→    b.vy = Math.max(T.maxFall, b.vy + T.gravity * dt)
+   446→    const was = b.onGround
+   447→    const res = this.world.move(b, dt, was)
+   448→    if (res.landed) {
+   449→      const fs = Math.abs(Math.min(0, fallBefore))
+   450→      if (fs > 2.5) this.sfx.land()
+   451→      this.duck.onLand(fs)
+   452→    }
+   453→    if (res.landed && this.checkCheckpoints()) {
+   454→      // a fresh checkpoint activation gets a tiny celebration
+   455→      this.duck.celebrate()
+   456→      this.sfx.chime()
+   457→      this.cb.onTip('checkpoint')
+   458→      this.cb.onCheckpoint(this.cpIndex + 1, this.checkpoints.length)
+   459→    }
+   460→
+   461→    // ---- footsteps follow the run cycle ----
+   462→    if (b.onGround && Math.abs(b.vx) > 0.8) {
+   463→      if (this.duck.consumeStep()) {
+   464→        this.stepAlt = !this.stepAlt
+   465→        this.sfx.step(this.stepAlt)
+   466→      }
+   467→    }
+   468→
+   469→    // ---- swing interaction: nearest seat within ITS grab range, preferring
+   470→    // the swing the duck is moving toward (never grabs a seat behind its
+   471→    // back when the next swing ahead is also in range) ----
+   472→    const moveDir = Math.abs(b.vx) > 0.5 ? Math.sign(b.vx) : 0
+   473→    let nearest: Swing | null = null
+   474→    let nearScore = Infinity
+   475→    for (const s of this.swings) {
+   476→      const seat = s.seatAnchor()
+   477→      const d = Math.hypot(b.x - seat.x, b.y + 0.35 - seat.y)
+   478→      const inRange = d < s.range && !(s === this.regrabSwing && this.regrabT > 0)
+   479→      s.setInRange(inRange)
+   480→      if (inRange) {
+   481→        const ahead = moveDir !== 0 ? Math.max(0, moveDir * (seat.x - b.x)) : 0
+   482→        const score = d - 0.45 * Math.min(1.2, ahead)
+   483→        if (score < nearScore) {
+   484→          nearScore = score
+   485→          nearest = s
+   486→        }
+   487→      }
+   488→    }
+   489→    if (nearest) {
+   490→      this.setPrompt('GRAB')
+   491→      if (interact) this.grab(nearest)
+   492→    } else {
+   493→      this.setPrompt('')
+   494→    }
+   495→
+   496→    this.collectStars()
+   497→
+   498→    // ---- safe recovery when falling out of the level ----
+   499→    if (b.y < this.killY) this.respawn(true)
+   500→
+   501→    // ---- end flag ----
+   502→    if (b.x > this.flagX - 0.35 && b.onGround) {
+   503→      this.won = true
+   504→      this.hopTimer = 0.3
+   505→      this.sfx.win()
+   506→      this.burst(b.x, b.y + 1.2, 26)
+   507→      this.burst(b.x - 1.2, b.y + 2.2, 18)
+   508→      this.burst(b.x + 1.2, b.y + 2.2, 18)
+   509→      this.cb.onVictory(true, {
+   510→        stars: this.starsGot,
+   511→        starsTotal: this.level.stars.length,
+   512→        levelIndex: this.levelIdx,
+   513→        levelName: this.def.name,
+   514→        time: this.levelTime,
+   515→      })
+   516→    }
+   517→
+   518→    this.syncDuck(dt, 0)
+   519→    this.updateCamera(dt)
+   520→  }
+   521→
+   522→  // ============================ stars ============================
+   523→
+   524→  private collectStars(): void {
+   525→    const b = this.body
+   526→    for (const s of this.level.stars) {
+   527→      if (s.taken) continue
+   528→      if (Math.hypot(b.x - s.x, b.y + 0.4 - s.y) < T.starRadius) {
+   529→        s.taken = true
+   530→        s.mesh.visible = false
+   531→        this.starsGot++
+   532→        this.sfx.collect()
+   533→        this.burst(s.x, s.y, 10)
+   534→        this.cb.onStars(this.starsGot, this.level.stars.length)
+   535→        if (!this.tipSent.star) {
+   536→          this.tipSent.star = true
+   537→          this.cb.onTip('star')
+   538→        }
+   539→      }
+   540→    }
+   541→  }
+   542→
+   543→  // ============================ confetti (shared bursts) ============================
+   544→
+   545→  private burst(x: number, y: number, n: number): void {
+   546→    for (let i = 0; i < n; i++) {
+   547→      const m = new THREE.Mesh(
+   548→        this.confettiGeo,
+   549→        new THREE.MeshBasicMaterial({
+   550→          color: this.confettiColors[i % this.confettiColors.length],
+   551→          transparent: true,
+   552→          opacity: 0.95,
+   553→        }),
+   554→      )
+   555→      m.position.set(x + (Math.random() - 0.5) * 0.3, y + (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.5)
+   556→      m.scale.setScalar(0.7 + Math.random() * 0.9)
+   557→      const a = Math.random() * Math.PI * 2
+   558→      const sp = 1.6 + Math.random() * 2.6
+   559→      this.confetti.push({
+   560→        mesh: m,
+   561→        vx: Math.cos(a) * sp,
+   562→        vy: 2.4 + Math.random() * 3,
+   563→        spin: (Math.random() - 0.5) * 16,
+   564→        life: 0.75 + Math.random() * 0.4,
+   565→        max: 1.15,
+   566→        grow: 0.1,
+   567→        gravity: 6.5,
+   568→      })
+   569→      this.scene.add(m)
+   570→    }
+   571→  }
+   572→
+   573→  private tickConfetti(dt: number): void {
+   574→    for (let i = this.confetti.length - 1; i >= 0; i--) {
+   575→      const p = this.confetti[i]
+   576→      p.life -= dt
+   577→      if (p.life <= 0) {
+   578→        this.scene.remove(p.mesh)
+   579→        ;(p.mesh.material as THREE.Material).dispose()
+   580→        this.confetti.splice(i, 1)
+   581→        continue
+   582→      }
+   583→      p.vy -= p.gravity * dt
+   584→      p.vx *= 1 - 0.9 * dt
+   585→      p.mesh.position.x += p.vx * dt
+   586→      p.mesh.position.y += p.vy * dt
+   587→      p.mesh.rotation.x += p.spin * dt
+   588→      p.mesh.rotation.y += p.spin * 0.6 * dt
+   589→      ;(p.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.life / 0.4)
+   590→    }
+   591→  }
+   592→
+   593→  // ============================ duck sync ============================
+   594→
+   595→  private syncDuck(dt: number, pump = 0): void {
+   596→    const b = this.body
+   597→    if (this.swinging && this.activeSwing) {
+   598→      if (Math.abs(this.activeSwing.omega) > 0.25) this.duck.facing = this.activeSwing.omega > 0 ? 1 : -1
+   599→    } else if (b.vx > 0.25) {
+   600→      this.duck.facing = 1
+   601→    } else if (b.vx < -0.25) {
+   602→      this.duck.facing = -1
+   603→    }
+   604→    this.duck.root.position.set(b.x, b.y, 0)
+   605→    // highest surface below the duck — feeds the contact shadow and
+   606→    // gives the player a readable landing cue over gaps (movers included)
+   607→    let groundY = -8
+   608→    const consider = (x1: number, x2: number, top: number) => {
+   609→      if (b.x >= x1 - 0.25 && b.x <= x2 + 0.25 && top <= b.y - b.hh + 0.08 && top > groundY) groundY = top
+   610→    }
+   611→    for (const p of this.plats) consider(p.x1, p.x2, p.top)
+   612→    for (const box of this.moverBoxes) consider(box.cx - box.hw, box.cx + box.hw, box.cy + box.hh)
+   613→    const speed = Math.hypot(b.vx, b.vy)
+   614→    this.duck.update(dt, {
+   615→      vx: b.vx,
+   616→      grounded: b.onGround,
+   617→      swinging: this.swinging,
+   618→      falling: !b.onGround && b.vy < -3,
+   619→      fast: !b.onGround && !this.swinging && speed > 6.4,
+   620→      tilt: this.swinging && this.activeSwing ? this.activeSwing.theta : 0,
+   621→      pump,
+   622→      won: this.won,
+   623→      groundY,
+   624→    })
+   625→    this.dirLight.position.set(b.x + 5, 11, 8)
+   626→    this.dirLight.target.position.set(b.x, 0, 0)
+   627→  }
+   628→
+   629→  private updateCamera(dt: number): void {
+   630→    const b = this.body
+   631→    // look-ahead follows SMOOTHED velocity: anticipates launches and fast
+   632→    // flights without ever snapping or oscillating
+   633→    this.smVx += (b.vx - this.smVx) * Math.min(1, dt * 3.2)
+   634→    const airborneFast = !b.onGround && !this.swinging && Math.abs(this.smVx) > 6
+   635→    const lead = clamp(this.smVx * (airborneFast ? 0.62 : 0.45), -3.4, 3.4)
+   636→    const look = lead + this.duck.facing * 0.35
+   637→    const tx = b.x + look
+   638→    const ty = Math.max(0.5, b.y * 0.5 + 1.0) + (this.swinging ? 0.4 : 0)
+   639→    const kx = 1 - Math.exp(-3.6 * dt)
+   640→    const ky = 1 - Math.exp(-3 * dt)
+   641→    this.camX += (tx - this.camX) * kx
+   642→    this.camY += (ty - this.camY) * ky
+   643→    // breathe out slightly while swinging to reveal the landing zone
+   644→    const tz = this.camZ * (this.swinging ? 1.12 : 1)
+   645→    this.camZCur += (tz - this.camZCur) * Math.min(1, dt * 2.5)
+   646→    this.camera.position.set(this.camX, this.camY + 1.5, this.camZCur)
+   647→    this.camera.lookAt(this.camX + 0.3, this.camY + 0.35, 0)
+   648→  }
+   649→
+   650→  // ============================ swing chain ============================
+   651→
+   652→  private grab(sw: Swing): void {
+   653→    const b = this.body
+   654→    sw.theta = clamp(sw.angleFrom(b.x, b.y + 0.35), -1.2, 1.2)
+   655→    sw.omega = clamp(b.vx / sw.L, -2.6, 2.6)
+   656→    this.activeSwing = sw
+   657→    this.swinging = true
+   658→    b.vx = 0
+   659→    b.vy = 0
+   660→    b.onGround = false
+   661→    for (const s of this.swings) s.setInRange(false)
+   662→    sw.bump()
+   663→    this.duck.onGrab()
+   664→    this.sfx.grab()
+   665→    this.sfx.sparkle()
+   666→    if (!this.tipSent.pump) {
+   667→      this.tipSent.pump = true
+   668→      this.cb.onTip('pump')
+   669→    }
+   670→  }
+   671→
+   672→  private release(): void {
+   673→    const sw = this.activeSwing
+   674→    if (!sw) return
+   675→    const v = sw.releaseVelocity()
+   676→    const b = this.body
+   677→    b.vx = v.x * T.releaseBoost
+   678→    b.vy = Math.max(v.y * T.releaseBoost, -2)
+   679→    // the duck kicks off the seat when releasing on a forward swing —
+   680→    // a small, readable boost that rewards good timing
+   681→    if (sw.omega > 0.3) b.vy += T.forwardKick
+   682→    if (Math.abs(b.vx) < 2.4) {
+   683→      b.vx = (sw.omega >= 0 ? 1 : -1) * 2.4
+   684→    }
+   685→    this.swinging = false
+   686→    this.activeSwing = null
+   687→    // brief cooldown so flying past THIS swing doesn't instantly re-grab it;
+   688→    // any other swing in range stays grabbable for mid-air chains. The base
+   689→    // cooldown scales with release speed: a hard launch leaves the old
+   690→    // swing's grab zone later, so it must stay locked longer (a weak drop
+   691→    // only locks it for a blink, keeping low-release re-grabs snappy).
+   692→    this.regrabSwing = sw
+   693→    this.regrabT = T.regrabCooldown + Math.min(0.55, Math.hypot(b.vx, b.vy) * 0.05)
+   694→    b.onGround = false
+   695→    this.duck.onJump()
+   696→    this.duck.onRelease()
+   697→    this.sfx.release()
+   698→  }
+   699→
+   700→  // ============================ checkpoints / lifecycle ============================
+   701→
+   702→  /** Activate the next checkpoint when the duck lands on its platform. */
+   703→  private checkCheckpoints(): boolean {
+   704→    const b = this.body
+   705→    for (let i = this.cpIndex + 1; i < this.checkpoints.length; i++) {
+   706→      const cp = this.checkpoints[i]
+   707→      const p = this.plats[cp.plat]
+   708→      if (!p) continue
+   709→      if (b.x > p.x1 + 0.3 && b.x < p.x2 - 0.3 && Math.abs(b.y - b.hh - cp.y) < 0.4) {
+   710→        this.cpIndex = i
+   711→        this.level?.setCheckpointActive(i)
+   712→        return true
+   713→      }
+   714→    }
+   715→    return false
+   716→  }
+   717→
+   718→  respawn(withFlash: boolean): void {
+   719→    const cp = this.cpIndex >= 0 ? this.checkpoints[this.cpIndex] : { x: this.spawnX, y: 0 }
+   720→    const b = this.body
+   721→    b.x = cp.x
+   722→    b.y = cp.y + T.colliderH / 2 + 0.02
+   723→    b.vx = 0
+   724→    b.vy = 0
+   725→    b.onGround = false
+   726→    b.carrier = null
+   727→    this.swinging = false
+   728→    this.activeSwing = null
+   729→    this.regrabSwing = null
+   730→    this.regrabT = 0
+   731→    this.debugRelease = null
+   732→    for (const s of this.swings) s.setInRange(false)
+   733→    this.duck.facing = 1
+   734→    this.duck.dizzy()
+   735→    this.camX = b.x
+   736→    this.camY = Math.max(1.0, b.y)
+   737→    this.sfx.fall()
+   738→    if (withFlash) this.cb.onFlash()
+   739→  }
+   740→
+   741→  reset(): void {
+   742→    if (this.won) {
+   743→      this.won = false
+   744→      this.cb.onVictory(false)
+   745→    }
+   746→    this.hopTimer = 0
+   747→    this.cpIndex = -1
+   748→    this.starsGot = 0
+   749→    this.levelTime = 0
+   750→    this.tipSent = { pump: false, star: false }
+   751→    for (const s of this.level.stars) {
+   752→      s.taken = false
+   753→      s.mesh.visible = true
+   754→    }
+   755→    this.cb.onStars(0, this.level.stars.length)
+   756→    for (const s of this.swings) {
+   757→      s.theta = 0
+   758→      s.omega = 0
+   759→    }
+   760→    this.respawn(false)
+   761→  }
+   762→
+   763→  /** Quick retry: back to the latest checkpoint, stars kept. */
+   764→  retry(): void {
+   765→    if (this.won) {
+   766→      this.won = false
+   767→      this.cb.onVictory(false)
+   768→    }
+   769→    this.respawn(true)
+   770→  }
+   771→
+   772→  /** Full restart from the very beginning (PLAY AGAIN). */
+   773→  fullReset(): void {
+   774→    this.reset()
+   775→  }
+   776→
+   777→  private setPrompt(label: string): void {
+   778→    if (label !== this.promptLabel) {
+   779→      this.promptLabel = label
+   780→      this.cb.onPrompt(label !== '', label)
+   781→    }
+   782→  }
+   783→
+   784→  resize(): void {
+   785→    const w = window.innerWidth
+   786→    const h = window.innerHeight
+   787→    this.renderer.setSize(w, h, false)
+   788→    this.camera.aspect = w / h
+   789→    const t = Math.tan(THREE.MathUtils.degToRad(21))
+   790→    const aspect = w / h
+   791→    // fit: at least ~8.8 units wide (~7.2 on tall portrait phones) and
+   792→    // ~5.6 units tall of gameplay view
+   793→    const fitW = aspect < 0.75 ? 7.2 : 8.8
+   794→    this.camZ = Math.min(30, Math.max(fitW / (2 * t * aspect), 5.6 / (2 * t)))
+   795→    this.camera.updateProjectionMatrix()
+   796→  }
+   797→
+   798→  dispose(): void {
+   799→    this.disposed = true
+   800→    cancelAnimationFrame(this.raf)
+   801→    window.removeEventListener('keydown', this.onKeyDown)
+   802→    window.removeEventListener('keyup', this.onKeyUp)
+   803→    window.removeEventListener('blur', this.onBlur)
+   804→    window.removeEventListener('resize', this.onResize)
+   805→    this.renderer.dispose()
+   806→  }
+   807→
+   808→  // ============================ input ============================
+   809→
+   810→  private key(e: KeyboardEvent, down: boolean): void {
+   811→    if (e.repeat) return
+   812→    const c = e.code
+   813→    if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'ArrowUp' || c === 'Space') e.preventDefault()
+   814→    if (down) this.sfx.unlock()
+   815→    if (c === 'ArrowLeft' || c === 'KeyA') this.input.set('left', down)
+   816→    else if (c === 'ArrowRight' || c === 'KeyD') this.input.set('right', down)
+   817→    else if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') this.input.set('jump', down)
+   818→    else if (c === 'KeyE' || c === 'Enter') this.input.set('interact', down)
+   819→    else if (c === 'KeyR' && down) this.retry()
+   820→  }
+   821→
+   822→  /** Touch buttons call this. */
+   823→  setInput(name: InputName, down: boolean): void {
+   824→    this.sfx.unlock()
+   825→    this.input.set(name, down)
+   826→  }
+   827→
+   828→  /** Toggle sound; returns the new muted state. */
+   829→  toggleMute(): boolean {
+   830→    this.sfx.muted = !this.sfx.muted
+   831→    return this.sfx.muted
+   832→  }
+   833→
+   834→  // ============================ debug/test hook ============================
+   835→
+   836→  private stepAlt = false
+   837→
+   838→  private installDebugHook(): void {
+   839→    const api: DebugApi = {
+   840→      press: (name, down) => this.input.set(name, down),
+   841→      tap: (name) => {
+   842→        this.input.set(name, true)
+   843→        window.setTimeout(() => this.input.set(name, false), 60)
+   844→      },
+   845→      warp: (x, y) => {
+   846→        this.body.x = x
+   847→        this.body.y = y
+   848→        this.body.vx = 0
+   849→        this.body.vy = 0
+   850→        this.body.carrier = null
+   851→        this.swinging = false
+   852→        this.activeSwing = null
+   853→      },
+   854→      place: (x, y) => {
+   855→        this.body.x = x
+   856→        this.body.y = y
+   857→        this.body.vx = 4.2
+   858→        this.body.vy = 0
+   859→        this.body.carrier = null
+   860→        this.swinging = false
+   861→        this.activeSwing = null
+   862→      },
+   863→      releaseWhen: (minOmega, lo, hi) => {
+   864→        this.debugRelease = { minOmega, lo, hi }
+   865→      },
+   866→      respawnNow: () => this.respawn(true),
+   867→      fullReset: () => this.fullReset(),
+   868→      loadLevel: (i: number) => this.loadLevel(i),
+   869→      sim: (n) => {
+   870→        const steps = Math.max(0, Math.min(900, Math.floor(n)))
+   871→        for (let i = 0; i < steps; i++) {
+   872→          this.step(T.fixedDt)
+   873→          this.acc = 0
+   874→          this.bg.update(T.fixedDt, this.camX)
+   875→          this.level.update(this.time)
+   876→          for (const s of this.swings) s.tickVisual(T.fixedDt, this.time)
+   877→          this.tickConfetti(T.fixedDt)
+   878→        }
+   879→        // render only for larger batches — hot test loops call sim(1) and
+   880→        // the live RAF loop repaints whatever the final state is anyway
+   881→        if (steps >= 5) this.renderer.render(this.scene, this.camera)
+   882→      },
+   883→      state: () => {
+   884→        let nearD = -1
+   885→        let inRange = false
+   886→        let maxSwingOmega = 0
+   887→        for (const s of this.swings) {
+   888→          const seat = s.seatAnchor()
+   889→          const d = Math.hypot(this.body.x - seat.x, this.body.y + 0.35 - seat.y)
+   890→          if (nearD < 0 || d < nearD) nearD = d
+   891→          if (d < s.range) inRange = true
+   892→          maxSwingOmega = Math.max(maxSwingOmega, Math.abs(s.omega))
+   893→        }
+   894→        // nearest moving platform (rides are tested against this)
+   895→        let moverX = 0
+   896→        let moverTop = 0
+   897→        let moverD = Infinity
+   898→        for (const box of this.moverBoxes) {
+   899→          const d = Math.abs(this.body.x - box.cx)
+   900→          if (d < moverD) {
+   901→            moverD = d
+   902→            moverX = box.cx
+   903→            moverTop = box.cy + box.hh
+   904→          }
+   905→        }
+   906→        return {
+   907→          time: this.time,
+   908→          level: this.levelIdx,
+   909→          x: this.body.x,
+   910→          y: this.body.y,
+   911→          vx: this.body.vx,
+   912→          vy: this.body.vy,
+   913→          onGround: this.body.onGround,
+   914→          swinging: this.swinging,
+   915→          won: this.won,
+   916→          theta: this.activeSwing?.theta ?? 0,
+   917→          omega: this.activeSwing?.omega ?? 0,
+   918→          swingX: this.activeSwing ? this.activeSwing.pivotX : 0,
+   919→          facing: this.duck.facing,
+   920→          cp: this.cpIndex,
+   921→          stars: this.starsGot,
+   922→          swings: this.swings.length,
+   923→          checkpoints: this.checkpoints.length,
+   924→          movers: this.moverBoxes.length,
+   925→          moverX: Math.round(moverX * 100) / 100,
+   926→          moverTop: Math.round(moverTop * 100) / 100,
+   927→          nearD: Math.round(nearD * 100) / 100,
+   928→          inRange,
+   929→          maxSwingOmega: Math.round(maxSwingOmega * 100) / 100,
+   930→        }
+   931→      },
+   932→    }
+   933→    ;(window as unknown as { __duck?: DebugApi }).__duck = api
+   934→  }
+   935→}
+   936→

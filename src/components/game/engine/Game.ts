@@ -150,6 +150,8 @@ export class Game {
   private regrabSwing: Swing | null = null
   private regrabT = 0
   private whooshT = 0
+  private creakT = 0
+  private glintCool = new WeakMap<Swing, number>()
 
   // ---- progression state ----
   private cpIndex = -1 // latest activated checkpoint
@@ -188,10 +190,13 @@ export class Game {
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 160)
 
     // ---- lights ----
-    const hemi = new THREE.HemisphereLight(0xfff4de, 0x7fae6a, 0.95)
+    const hemi = new THREE.HemisphereLight(0xfff4de, 0x8fb377, 0.95)
     this.dirLight = new THREE.DirectionalLight(0xffe7bd, 2.2)
     this.dirLight.castShadow = true
-    this.dirLight.shadow.mapSize.set(2048, 2048)
+    // phones get a 1024 shadow map — at their viewing distance the quality
+    // difference is invisible, but the fill-cost saving is real
+    const shadowRes = Math.min(window.innerWidth, window.innerHeight) < 520 ? 1024 : 2048
+    this.dirLight.shadow.mapSize.set(shadowRes, shadowRes)
     this.dirLight.shadow.camera.near = 1
     this.dirLight.shadow.camera.far = 44
     this.dirLight.shadow.camera.left = -9
@@ -377,6 +382,13 @@ export class Game {
       const pump = dir * align * T.swingPump
       sw.update(dt, pump, 30)
       for (const s of this.swings) if (s !== sw) s.settle(dt, this.time)
+      // the ropes creak softly when the duck works the swing hard or sweeps
+      // near the top of the arc — quiet, occasional, part of the world
+      this.creakT -= dt
+      if ((Math.abs(pump) > 2.2 || Math.abs(sw.theta) > 1.02) && this.creakT <= 0) {
+        this.sfx.creak()
+        this.creakT = 0.5 + Math.random() * 0.4
+      }
       if (this.debugRelease) {
         const d = this.debugRelease
         if (sw.omega > d.minOmega && sw.theta > d.lo && sw.theta < d.hi) {
@@ -436,7 +448,7 @@ export class Game {
       this.jumpBuf = 0
       this.coyote = 0
       b.onGround = false
-      this.duck.onJump()
+      this.duck.onJump(true)
       this.sfx.jump()
     }
 
@@ -452,8 +464,10 @@ export class Game {
     }
     if (res.landed && this.checkCheckpoints()) {
       // a fresh checkpoint activation gets a tiny celebration
+      const cp = this.checkpoints[this.cpIndex]
       this.duck.celebrate()
       this.sfx.chime()
+      if (cp) this.burst(cp.x, cp.y + 1.3, 12)
       this.cb.onTip('checkpoint')
       this.cb.onCheckpoint(this.cpIndex + 1, this.checkpoints.length)
     }
@@ -475,8 +489,20 @@ export class Game {
     for (const s of this.swings) {
       const seat = s.seatAnchor()
       const d = Math.hypot(b.x - seat.x, b.y + 0.35 - seat.y)
+      const wasInRange = s.inRangeNow
       const inRange = d < s.range && !(s === this.regrabSwing && this.regrabT > 0)
       s.setInRange(inRange)
+      // first moment a swing becomes reachable: a soft glint + tiny sparkle
+      // helps players read WHERE the next interaction lives (edge-triggered,
+      // cooled down so cruising past swings never turns into a siren)
+      if (inRange && !wasInRange && !this.swinging) {
+        const last = this.glintCool.get(s) ?? -9
+        if (this.time - last > 1.4) {
+          this.glintCool.set(s, this.time)
+          this.sfx.glint()
+          this.burst(seat.x, seat.y + 0.3, 4)
+        }
+      }
       if (inRange) {
         const ahead = moveDir !== 0 ? Math.max(0, moveDir * (seat.x - b.x)) : 0
         const score = d - 0.45 * Math.min(1.2, ahead)
@@ -613,6 +639,7 @@ export class Game {
     const speed = Math.hypot(b.vx, b.vy)
     this.duck.update(dt, {
       vx: b.vx,
+      vy: b.vy,
       grounded: b.onGround,
       swinging: this.swinging,
       falling: !b.onGround && b.vy < -3,
@@ -632,7 +659,12 @@ export class Game {
     // flights without ever snapping or oscillating
     this.smVx += (b.vx - this.smVx) * Math.min(1, dt * 3.2)
     const airborneFast = !b.onGround && !this.swinging && Math.abs(this.smVx) > 6
-    const lead = clamp(this.smVx * (airborneFast ? 0.62 : 0.45), -3.4, 3.4)
+    let lead = clamp(this.smVx * (airborneFast ? 0.62 : 0.45), -3.4, 3.4)
+    // while swinging, lean the frame into the arc's travel direction so the
+    // landing zone stays readable through the widest part of the sweep
+    if (this.swinging && this.activeSwing) {
+      lead += clamp(this.activeSwing.omega * this.activeSwing.L * 0.075, -1.1, 1.1)
+    }
     const look = lead + this.duck.facing * 0.35
     const tx = b.x + look
     const ty = Math.max(0.5, b.y * 0.5 + 1.0) + (this.swinging ? 0.4 : 0)
@@ -927,6 +959,8 @@ export class Game {
           nearD: Math.round(nearD * 100) / 100,
           inRange,
           maxSwingOmega: Math.round(maxSwingOmega * 100) / 100,
+          drawCalls: this.renderer.info.render.calls,
+          triangles: this.renderer.info.render.triangles,
         }
       },
     }

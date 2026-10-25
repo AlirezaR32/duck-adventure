@@ -1,0 +1,876 @@
+     1→     1→/**
+     2→     2→ * Project Duck — the duck character (V0.5 "collectible figure" rebuild).
+     3→     3→ *
+     4→     4→ * Visual target: the hanging-duck ornament — a smooth, manufactured-toy
+     5→     5→ * white duck with a LONG elegant neck that flows out of the chest line, a
+     6→     6→ * softly rounded head, a compact gently-elongated body with a perky lifted
+     7→     7→ * tail, properly sculpted bill (not a cone), small folded wings, glossy
+     8→     8→ * dark bead eyes with catchlights and stubby orange legs with webbed feet.
+     9→     9→ *
+    10→    10→ * V0.5 quality goals, compared to V0.2's model:
+    11→    11→ *  - ONE sculpted torso: the lathe is deformed after generation (chest fill,
+    12→    12→ *    rear lift) so the tail is part of the body silhouette, not a lump
+    13→    13→ *  - the neck tube flares as it enters the skull — no snowman junction
+    14→    14→ *  - a real bill: two flattened, droop-curved mandibles with vertex-tone
+    15→    15→ *    gradients instead of faceted lathe cones
+    16→    16→ *  - real legs with hip pivots: the run cycle, jump tuck, reach and the
+    17→    17→ *    reference's forward-footed sit pose are all leg-driven now
+    18→    18→ *  - warm-white vertex gradients for subtle tonal variation (no flat grey)
+    19→    19→ *
+    20→    20→ * Everything visual lives here; the collider is owned by Physics/Game and
+    21→    21→ * never sees any of this. All animation is procedural and state-driven —
+    22→    22→ * animation never fakes the swing's physics, it only reacts to it.
+    23→    23→ */
+    24→    24→
+    25→    25→import * as THREE from 'three'
+    26→    26→
+    27→    27→const C = {
+    28→    28→  bodyHi: 0xfdfaf2, // warm toy white — crown / upper surfaces
+    29→    29→  bodyLo: 0xede2cb, // deeper cream — belly / underside shading
+    30→    30→  wing: 0xf2ebdb, // folded wing tone (a hair deeper, for readability)
+    31→    31→  beakHi: 0xffb054, // bright orange-yellow, base
+    32→    32→  beakLo: 0xf0871c, // deeper orange, tip
+    33→    33→  feet: 0xf59b25, // warm orange legs + webbed feet
+    34→    34→  eye: 0x1d1712, // glossy near-black
+    35→    35→}
+    36→    36→
+    37→    37→const colHi = new THREE.Color(C.bodyHi)
+    38→    38→const colLo = new THREE.Color(C.bodyLo)
+    39→    39→
+    40→    40→/** Smoothstep from a to b (works with b < a — the clamp flips it). */
+    41→    41→function smooth(a: number, b: number, t: number): number {
+    42→    42→  const k = Math.min(1, Math.max(0, (t - a) / (b - a)))
+    43→    43→  return k * k * (3 - 2 * k)
+    44→    44→}
+    45→    45→
+    46→    46→function bodyMat(): THREE.MeshPhysicalMaterial {
+    47→    47→  return new THREE.MeshPhysicalMaterial({
+    48→    48→    color: 0xffffff,
+    49→    49→    vertexColors: true,
+    50→    50→    roughness: 0.52,
+    51→    51→    metalness: 0,
+    52→    52→    clearcoat: 0.35,
+    53→    53→    clearcoatRoughness: 0.5,
+    54→    54→  })
+    55→    55→}
+    56→    56→
+    57→    57→function toyMat(color: number, rough = 0.55): THREE.MeshPhysicalMaterial {
+    58→    58→  return new THREE.MeshPhysicalMaterial({
+    59→    59→    color,
+    60→    60→    roughness: rough,
+    61→    61→    metalness: 0,
+    62→    62→    clearcoat: 0.3,
+    63→    63→    clearcoatRoughness: 0.55,
+    64→    64→  })
+    65→    65→}
+    66→    66→
+    67→    67→/**
+    68→    68→ * Smooth tube swept along a Catmull-Rom path with a radius that varies
+    69→    69→ * linearly across the `radii` keyframes (evenly spaced along the curve).
+    70→    70→ * Used for the neck so it can taper elegantly and flare into the head.
+    71→    71→ */
+    72→    72→function taperedTube(
+    73→    73→  pts: [number, number, number][],
+    74→    74→  radii: number[],
+    75→    75→  segs = 30,
+    76→    76→  radial = 22,
+    77→    77→): THREE.BufferGeometry {
+    78→    78→  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])))
+    79→    79→  const frames = curve.computeFrenetFrames(segs, false)
+    80→    80→  const pos: number[] = []
+    81→    81→  const idx: number[] = []
+    82→    82→  for (let i = 0; i <= segs; i++) {
+    83→    83→    const t = i / segs
+    84→    84→    const c = curve.getPoint(t)
+    85→    85→    const n = frames.normals[Math.min(i, segs - 1)]
+    86→    86→    const b = frames.binormals[Math.min(i, segs - 1)]
+    87→    87→    const f = t * (radii.length - 1)
+    88→    88→    const i0 = Math.floor(f)
+    89→    89→    const i1 = Math.min(radii.length - 1, i0 + 1)
+    90→    90→    const r = radii[i0] + (radii[i1] - radii[i0]) * (f - i0)
+    91→    91→    for (let j = 0; j <= radial; j++) {
+    92→    92→      const a = (j / radial) * Math.PI * 2
+    93→    93→      const ca = Math.cos(a)
+    94→    94→      const sa = Math.sin(a)
+    95→    95→      pos.push(
+    96→    96→        c.x + (n.x * ca + b.x * sa) * r,
+    97→    97→        c.y + (n.y * ca + b.y * sa) * r,
+    98→    98→        c.z + (n.z * ca + b.z * sa) * r,
+    99→    99→      )
+   100→   100→    }
+   101→   101→  }
+   102→   102→  const ring = radial + 1
+   103→   103→  for (let i = 0; i < segs; i++) {
+   104→   104→    for (let j = 0; j < radial; j++) {
+   105→   105→      const a = i * ring + j
+   106→   106→      idx.push(a, a + ring, a + 1, a + 1, a + ring, a + ring + 1)
+   107→   107→    }
+   108→   108→  }
+   109→   109→  const g = new THREE.BufferGeometry()
+   110→   110→  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+   111→   111→  g.setIndex(idx)
+   112→   112→  g.computeVertexNormals()
+   113→   113→  return g
+   114→   114→}
+   115→   115→
+   116→   116→/** Lathe from a (radius, height) profile. */
+   117→   117→function latheProfile(prof: [number, number][], segs = 36): THREE.LatheGeometry {
+   118→   118→  return new THREE.LatheGeometry(prof.map((p) => new THREE.Vector2(p[0], p[1])), segs)
+   119→   119→}
+   120→   120→
+   121→   121→/**
+   122→   122→ * Sculpt the raw pear lathe into the ornament silhouette:
+   123→   123→ *  - elongate fore-aft, slim side-to-side
+   124→   124→ *  - fill the low chest
+   125→   125→ *  - rotate the rear up around a mid-body pivot so the tail line is part
+   126→   126→ *    of the body itself (perky, tucked, smooth — no separate lump)
+   127→   127→ */
+   128→   128→function sculptTorso(geo: THREE.BufferGeometry): void {
+   129→   129→  const p = geo.getAttribute('position') as THREE.BufferAttribute
+   130→   130→  const v = new THREE.Vector3()
+   131→   131→  for (let i = 0; i < p.count; i++) {
+   132→   132→    v.fromBufferAttribute(p, i)
+   133→   133→    let x = v.x * 1.38
+   134→   134→    const y = v.y
+   135→   135→    const z = v.z * 0.92
+   136→   136→    x += smooth(0.05, 0.42, x) * smooth(0.5, 0.08, y) * 0.06 // chest fill
+   137→   137→    const rear = smooth(0.02, -0.55, x)
+   138→   138→    const a = -0.34 * rear // lift the rear
+   139→   139→    const py = y - 0.36
+   140→   140→    const ca = Math.cos(a)
+   141→   141→    const sa = Math.sin(a)
+   142→   142→    p.setXYZ(i, x * ca - py * sa, x * sa + py * ca + 0.36, z)
+   143→   143→  }
+   144→   144→  geo.computeVertexNormals()
+   145→   145→}
+   146→   146→
+   147→   147→/** Per-vertex tint along Y (lo at yLo → hi at yHi). Adds soft tonal depth. */
+   148→   148→function paintY(geo: THREE.BufferGeometry, yLo: number, yHi: number, lo = colLo, hi = colHi): void {
+   149→   149→  const pos = geo.getAttribute('position')
+   150→   150→  const col = new Float32Array(pos.count * 3)
+   151→   151→  const c = new THREE.Color()
+   152→   152→  for (let i = 0; i < pos.count; i++) {
+   153→   153→    const t = Math.min(1, Math.max(0, (pos.getY(i) - yLo) / (yHi - yLo)))
+   154→   154→    c.copy(lo).lerp(hi, t)
+   155→   155→    col[i * 3] = c.r
+   156→   156→    col[i * 3 + 1] = c.g
+   157→   157→    col[i * 3 + 2] = c.b
+   158→   158→  }
+   159→   159→  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+   160→   160→}
+   161→   161→
+   162→   162→/** Per-vertex tint along X (used for the bill: warm base → deep tip). */
+   163→   163→function paintX(geo: THREE.BufferGeometry, xLo: number, xHi: number, lo: THREE.Color, hi: THREE.Color): void {
+   164→   164→  const pos = geo.getAttribute('position')
+   165→   165→  const col = new Float32Array(pos.count * 3)
+   166→   166→  const c = new THREE.Color()
+   167→   167→  for (let i = 0; i < pos.count; i++) {
+   168→   168→    const t = Math.min(1, Math.max(0, (pos.getX(i) - xLo) / (xHi - xLo)))
+   169→   169→    c.copy(lo).lerp(hi, t)
+   170→   170→    col[i * 3] = c.r
+   171→   171→    col[i * 3 + 1] = c.g
+   172→   172→    col[i * 3 + 2] = c.b
+   173→   173→  }
+   174→   174→  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+   175→   175→}
+   176→   176→
+   177→   177→function blob(
+   178→   178→  r: number,
+   179→   179→  sx: number,
+   180→   180→  sy: number,
+   181→   181→  sz: number,
+   182→   182→  mat: THREE.Material,
+   183→   183→  segW = 24,
+   184→   184→  segH = 18,
+   185→   185→): THREE.Mesh {
+   186→   186→  const m = new THREE.Mesh(new THREE.SphereGeometry(r, segW, segH), mat)
+   187→   187→  m.scale.set(sx, sy, sz)
+   188→   188→  m.castShadow = true
+   189→   189→  return m
+   190→   190→}
+   191→   191→
+   192→   192→interface Particle {
+   193→   193→  mesh: THREE.Mesh
+   194→   194→  vx: number
+   195→   195→  vy: number
+   196→   196→  spin: number
+   197→   197→  life: number
+   198→   198→  max: number
+   199→   199→  grow: number
+   200→   200→}
+   201→   201→
+   202→   202→export interface DuckFrame {
+   203→   203→  vx: number // world-space horizontal velocity
+   204→   204→  grounded: boolean
+   205→   205→  swinging: boolean
+   206→   206→  falling: boolean // airborne, dropping fast
+   207→   207→  fast: boolean // airborne + high speed (flight after a release)
+   208→   208→  tilt: number // world-space rope tilt while swinging (rad), else 0
+   209→   209→  pump: number // -1..1 pumping input while swinging, else 0
+   210→   210→  won: boolean // celebration!
+   211→   211→  groundY: number // top of the highest platform below the duck (landing read)
+   212→   212→}
+   213→   213→
+   214→   214→export class Duck {
+   215→   215→  /** Physics anchor: root sits at the collider's bottom-center (feet). */
+   216→   216→  readonly root = new THREE.Group()
+   217→   217→  /** Visual facing: 1 = right, -1 = left. Rotation eases smoothly. */
+   218→   218→  facing = 1
+   219→   219→
+   220→   220→  private squash = new THREE.Group()
+   221→   221→  private bodyGrp = new THREE.Group()
+   222→   222→  private neckGrp = new THREE.Group()
+   223→   223→  private headGrp = new THREE.Group()
+   224→   224→  private tailGrp = new THREE.Group()
+   225→   225→  private hips: THREE.Group[] = []
+   226→   226→  private feet: THREE.Group[] = []
+   227→   227→  private eyes: THREE.Group[] = []
+   228→   228→  private wings: THREE.Group[] = []
+   229→   229→
+   230→   230→  private matBody = bodyMat()
+   231→   231→  private matWing = toyMat(C.wing, 0.6)
+   232→   232→  private matBeak = new THREE.MeshPhysicalMaterial({
+   233→   233→    color: 0xffffff,
+   234→   234→    vertexColors: true,
+   235→   235→    roughness: 0.3,
+   236→   236→    metalness: 0,
+   237→   237→    clearcoat: 0.55,
+   238→   238→    clearcoatRoughness: 0.4,
+   239→   239→  })
+   240→   240→  private matFeet = toyMat(C.feet, 0.42)
+   241→   241→  private matEye = new THREE.MeshStandardMaterial({ color: C.eye, roughness: 0.16, metalness: 0.1 })
+   242→   242→
+   243→   243→  private dustGeo = new THREE.SphereGeometry(0.05, 6, 5)
+   244→   244→  private sparkGeo = new THREE.OctahedronGeometry(0.036, 0)
+   245→   245→  private streakGeo = new THREE.SphereGeometry(0.055, 8, 6)
+   246→   246→  private particles: Particle[] = []
+   247→   247→
+   248→   248→  /** Soft contact shadow — added to the SCENE by Game (world-space). */
+   249→   249→  readonly shadowMesh = new THREE.Mesh(
+   250→   250→    new THREE.PlaneGeometry(1.3, 0.66),
+   251→   251→    new THREE.MeshBasicMaterial({
+   252→   252→      map: Duck.shadowTexture(),
+   253→   253→      transparent: true,
+   254→   254→      depthWrite: false,
+   255→   255→    }),
+   256→   256→  )
+   257→   257→
+   258→   258→  private static shadowTexture(): THREE.Texture {
+   259→   259→    // guarded so non-DOM environments (GLB export under bun) can still
+   260→   260→    // construct the duck — they just get a flat 1px stand-in
+   261→   261→    if (typeof document === 'undefined') {
+   262→   262→      const flat = new THREE.DataTexture(new Uint8Array([140, 120, 90, 255]), 1, 1)
+   263→   263→      flat.needsUpdate = true
+   264→   264→      return flat
+   265→   265→    }
+   266→   266→    const c = document.createElement('canvas')
+   267→   267→    c.width = c.height = 128
+   268→   268→    const ctx = c.getContext('2d')!
+   269→   269→    const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 62)
+   270→   270→    g.addColorStop(0, 'rgba(38, 30, 18, 0.46)')
+   271→   271→    g.addColorStop(0.65, 'rgba(38, 30, 18, 0.24)')
+   272→   272→    g.addColorStop(1, 'rgba(38, 30, 18, 0)')
+   273→   273→    ctx.fillStyle = g
+   274→   274→    ctx.fillRect(0, 0, 128, 128)
+   275→   275→    return new THREE.CanvasTexture(c)
+   276→   276→  }
+   277→   277→
+   278→   278→  private t = 0
+   279→   279→  private runPhase = 0
+   280→   280→  private lean = 0
+   281→   281→  private sqY = 1 // squash/stretch scale-y, spring-driven
+   282→   282→  private sqVel = 0
+   283→   283→  private nod = 0 // head pitch spring (landing)
+   284→   284→  private nodVel = 0
+   285→   285→  private blinkIn = 2.2
+   286→   286→  private blinkLeft = 0
+   287→   287→  private sitBlend = 0
+   288→   288→  private airBlend = 0
+   289→   289→  private curiosity = 0
+   290→   290→  private curiosityTarget = 0
+   291→   291→  private curiosityIn = 3
+   292→   292→  private glanceIn = 5 // idle "look at the player" timer
+   293→   293→  private glanceLeft = 0
+   294→   294→  private glanceTarget = 0
+   295→   295→  private flingT = 0 // release "fling" pose timer
+   296→   296→  private streakIn = 0
+   297→   297→  private celebT = 0 // celebratory animation timer (checkpoint / section)
+   298→   298→  private dizzyT = 0 // cute recovery animation timer (after respawn)
+   299→   299→  private stepHalf = 0
+   300→   300→
+   301→   301→  constructor() {
+   302→   302→    this.build()
+   303→   303→    this.shadowMesh.rotation.x = -Math.PI / 2
+   304→   304→    this.shadowMesh.renderOrder = 2
+   305→   305→    this.shadowMesh.visible = false
+   306→   306→    // the duck is the star — present it a touch larger than collider scale
+   307→   307→    this.root.scale.setScalar(1.26)
+   308→   308→    // exporters expect unit normals; computeVertexNormals output can be
+   309→   309→    // denormalized after custom sweeping, so normalize everything once
+   310→   310→    this.root.traverse((o) => {
+   311→   311→      const mesh = o as THREE.Mesh
+   312→   312→      if (mesh.isMesh && mesh.geometry.getAttribute('normal')) {
+   313→   313→        const n = mesh.geometry.getAttribute('normal') as THREE.BufferAttribute
+   314→   314→        const v = new THREE.Vector3()
+   315→   315→        for (let i = 0; i < n.count; i++) {
+   316→   316→          v.fromBufferAttribute(n, i).normalize()
+   317→   317→          n.setXYZ(i, v.x, v.y, v.z)
+   318→   318→        }
+   319→   319→        n.needsUpdate = true
+   320→   320→      }
+   321→   321→    })
+   322→   322→  }
+   323→   323→
+   324→   324→  private build(): void {
+   325→   325→    this.root.add(this.squash)
+   326→   326→    this.squash.add(this.bodyGrp)
+   327→   327→
+   328→   328→    // ---- torso: one sculpted lathe — deep plump chest, back flowing down
+   329→   329→    // and up into a perky lifted tail (part of the silhouette, not a lump) ----
+   330→   330→    const prof: [number, number][] = [
+   331→   331→      [0.001, 0.0],
+   332→   332→      [0.1, 0.004],
+   333→   333→      [0.2, 0.028],
+   334→   334→      [0.29, 0.09],
+   335→   335→      [0.335, 0.19],
+   336→   336→      [0.345, 0.3],
+   337→   337→      [0.335, 0.4],
+   338→   338→      [0.31, 0.5],
+   339→   339→      [0.27, 0.585],
+   340→   340→      [0.21, 0.655],
+   341→   341→      [0.13, 0.705],
+   342→   342→      [0.001, 0.74],
+   343→   343→    ]
+   344→   344→    const torsoGeo = latheProfile(prof, 36)
+   345→   345→    sculptTorso(torsoGeo)
+   346→   346→    torsoGeo.translate(0, 0.22, 0)
+   347→   347→    paintY(torsoGeo, 0.2, 0.98)
+   348→   348→    const torso = new THREE.Mesh(torsoGeo, this.matBody)
+   349→   349→    torso.castShadow = true
+   350→   350→    this.bodyGrp.add(torso)
+   351→   351→
+   352→   352→    // ---- small perky tail tip, half-embedded in the lifted rear ----
+   353→   353→    const tailGeo = latheProfile(
+   354→   354→      [
+   355→   355→        [0.001, 0.0],
+   356→   356→        [0.075, 0.03],
+   357→   357→        [0.105, 0.09],
+   358→   358→        [0.096, 0.16],
+   359→   359→        [0.062, 0.225],
+   360→   360→        [0.026, 0.265],
+   361→   361→        [0.001, 0.28],
+   362→   362→      ],
+   363→   363→      22,
+   364→   364→    )
+   365→   365→    paintY(tailGeo, 0.0, 0.28)
+   366→   366→    this.tailGrp.position.set(-0.42, 0.7, 0)
+   367→   367→    this.tailGrp.rotation.z = 0.5 // tip points back-up
+   368→   368→    const tail = new THREE.Mesh(tailGeo, this.matBody)
+   369→   369→    tail.scale.setScalar(0.92)
+   370→   370→    tail.castShadow = true
+   371→   371→    this.tailGrp.add(tail)
+   372→   372→    this.bodyGrp.add(this.tailGrp)
+   373→   373→
+   374→   374→    // ---- folded wings (small, tight to the shoulder, tips back-down) ----
+   375→   375→    const wingShape = new THREE.Shape()
+   376→   376→    wingShape.moveTo(0.09, 0.03)
+   377→   377→    wingShape.quadraticCurveTo(0.08, 0.12, -0.03, 0.125)
+   378→   378→    wingShape.quadraticCurveTo(-0.17, 0.12, -0.26, 0.02)
+   379→   379→    wingShape.quadraticCurveTo(-0.31, -0.04, -0.28, -0.075)
+   380→   380→    wingShape.quadraticCurveTo(-0.15, -0.1, -0.04, -0.085)
+   381→   381→    wingShape.quadraticCurveTo(0.05, -0.05, 0.09, 0.03)
+   382→   382→    const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
+   383→   383→      depth: 0.05,
+   384→   384→      bevelEnabled: true,
+   385→   385→      bevelThickness: 0.018,
+   386→   386→      bevelSize: 0.018,
+   387→   387→      bevelSegments: 3,
+   388→   388→      curveSegments: 10,
+   389→   389→    })
+   390→   390→    wingGeo.translate(0, 0, -0.025)
+   391→   391→    // a second, smaller covert layer gives the folded wing real depth
+   392→   392→    const covertGeo = wingGeo.clone()
+   393→   393→    for (const zs of [0.29, -0.29]) {
+   394→   394→      const g = new THREE.Group()
+   395→   395→      g.position.set(0.14, 0.82, zs)
+   396→   396→      const w = new THREE.Mesh(wingGeo, this.matWing)
+   397→   397→      w.scale.set(0.8, 0.8, 0.78)
+   398→   398→      w.castShadow = true
+   399→   399→      w.rotation.y = zs > 0 ? -0.1 : 0.1
+   400→   400→      g.add(w)
+   401→   401→      const w2 = new THREE.Mesh(covertGeo, this.matWing)
+   402→   402→      w2.scale.set(0.52, 0.52, 0.7)
+   403→   403→      w2.position.set(0.045, -0.028, zs > 0 ? 0.018 : -0.018)
+   404→   404→      w2.rotation.y = zs > 0 ? -0.1 : 0.1
+   405→   405→      g.add(w2)
+   406→   406→      g.rotation.z = -0.15
+   407→   407→      this.wings.push(g)
+   408→   408→      this.bodyGrp.add(g)
+   409→   409→    }
+   410→   410→
+   411→   411→    // ---- long elegant neck (tapered sweep) that merges into the head:
+   412→   412→    // the top rings stay slim and bury DEEP inside the skull so the visible
+   413→   413→    // junction is a clean throat line, never a snowman crease ----
+   414→   414→    this.neckGrp.position.set(0.26, 0.72, 0)
+   415→   415→    const neck = new THREE.Mesh(
+   416→   416→      taperedTube(
+   417→   417→        [
+   418→   418→          [0, -0.18, 0],
+   419→   419→          [-0.01, 0.14, 0],
+   420→   420→          [0.02, 0.34, 0],
+   421→   421→          [0.07, 0.52, 0],
+   422→   422→          [0.1, 0.64, 0],
+   423→   423→        ],
+   424→   424→        [0.165, 0.134, 0.11, 0.112, 0.118],
+   425→   425→      ),
+   426→   426→      this.matBody,
+   427→   427→    )
+   428→   428→    neck.castShadow = true
+   429→   429→    paintY(neck.geometry, -0.12, 0.7)
+   430→   430→    this.neckGrp.add(neck)
+   431→   431→    this.bodyGrp.add(this.neckGrp)
+   432→   432→
+   433→   433→    // ---- head: rounded skull, the neck's slim tube merges deep into it ----
+   434→   434→    this.headGrp.position.set(0.1, 0.64, 0)
+   435→   435→    const skullGeo = new THREE.SphereGeometry(0.225, 28, 22)
+   436→   436→    skullGeo.scale(1.02, 0.95, 0.98)
+   437→   437→    paintY(skullGeo, -0.18, 0.24)
+   438→   438→    const skull = new THREE.Mesh(skullGeo, this.matBody)
+   439→   439→    skull.castShadow = true
+   440→   440→    this.headGrp.add(skull)
+   441→   441→
+   442→   442→    // ---- bill: two smooth flattened mandibles with droop-curved tips ----
+   443→   443→    const beakUpGeo = latheProfile(
+   444→   444→      [
+   445→   445→        [0.001, 0.0],
+   446→   446→        [0.033, 0.006],
+   447→   447→        [0.062, 0.02],
+   448→   448→        [0.084, 0.044],
+   449→   449→        [0.094, 0.076],
+   450→   450→        [0.094, 0.108],
+   451→   451→        [0.086, 0.14],
+   452→   452→        [0.07, 0.166],
+   453→   453→        [0.048, 0.188],
+   454→   454→        [0.026, 0.202],
+   455→   455→        [0.009, 0.209],
+   456→   456→        [0.001, 0.211],
+   457→   457→      ],
+   458→   458→      26,
+   459→   459→    )
+   460→   460→    beakUpGeo.rotateZ(-Math.PI / 2)
+   461→   461→    beakUpGeo.scale(1, 0.6, 1.22)
+   462→   462→    // gentle droop toward the tip
+   463→   463→    {
+   464→   464→      const p = beakUpGeo.getAttribute('position') as THREE.BufferAttribute
+   465→   465→      for (let i = 0; i < p.count; i++) {
+   466→   466→        const x = p.getX(i)
+   467→   467→        if (x > 0.08) p.setY(i, p.getY(i) - (x - 0.08) * (x - 0.08) * 1.5)
+   468→   468→      }
+   469→   469→      beakUpGeo.computeVertexNormals()
+   470→   470→    }
+   471→   471→    paintX(beakUpGeo, 0.0, 0.21, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
+   472→   472→    const beakUp = new THREE.Mesh(beakUpGeo, this.matBeak)
+   473→   473→    beakUp.position.set(0.15, -0.005, 0)
+   474→   474→    beakUp.rotation.z = -0.07
+   475→   475→    beakUp.castShadow = true
+   476→   476→    this.headGrp.add(beakUp)
+   477→   477→
+   478→   478→    const beakLoGeo = latheProfile(
+   479→   479→      [
+   480→   480→        [0.001, 0.0],
+   481→   481→        [0.04, 0.01],
+   482→   482→        [0.066, 0.036],
+   483→   483→        [0.074, 0.072],
+   484→   484→        [0.06, 0.118],
+   485→   485→        [0.034, 0.152],
+   486→   486→        [0.001, 0.166],
+   487→   487→      ],
+   488→   488→      22,
+   489→   489→    )
+   490→   490→    beakLoGeo.rotateZ(-Math.PI / 2)
+   491→   491→    beakLoGeo.scale(1, 0.42, 1.0)
+   492→   492→    paintX(beakLoGeo, 0.0, 0.17, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
+   493→   493→    const beakLo = new THREE.Mesh(beakLoGeo, this.matBeak)
+   494→   494→    beakLo.position.set(0.135, -0.072, 0)
+   495→   495→    beakLo.rotation.z = 0.1
+   496→   496→    this.headGrp.add(beakLo)
+   497→   497→
+   498→   498→    // glossy bead eyes + catchlight (they read at phone size)
+   499→   499→    for (const zs of [0.165, -0.165]) {
+   500→   500→      const g = new THREE.Group()
+   501→   501→      g.position.set(0.11, 0.05, zs)
+   502→   502→      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.047, 14, 12), this.matEye)
+   503→   503→      bead.scale.set(1, 1.28, 0.62)
+   504→   504→      const glow = new THREE.Mesh(
+   505→   505→        new THREE.SphereGeometry(0.014, 8, 6),
+   506→   506→        new THREE.MeshBasicMaterial({ color: 0xffffff }),
+   507→   507→      )
+   508→   508→      glow.position.set(0.012, 0.017, zs > 0 ? 0.014 : -0.014)
+   509→   509→      g.add(bead, glow)
+   510→   510→      this.headGrp.add(g)
+   511→   511→      this.eyes.push(g)
+   512→   512→    }
+   513→   513→    this.neckGrp.add(this.headGrp)
+   514→   514→
+   515→   515→    // ---- stubby orange legs with webbed feet (on `squash` so landings
+   516→   516→    // compress the whole character; hips are the animation pivots) ----
+   517→   517→    const footShape = new THREE.Shape()
+   518→   518→    footShape.moveTo(0, 0.062)
+   519→   519→    footShape.quadraticCurveTo(0.14, 0.085, 0.235, 0.062)
+   520→   520→    footShape.quadraticCurveTo(0.16, 0.028, 0.185, 0.008)
+   521→   521→    footShape.quadraticCurveTo(0.245, -0.002, 0.245, -0.014)
+   522→   522→    footShape.quadraticCurveTo(0.16, -0.03, 0.175, -0.052)
+   523→   523→    footShape.quadraticCurveTo(0.2, -0.078, 0.185, -0.088)
+   524→   524→    footShape.quadraticCurveTo(0.08, -0.1, 0, -0.07)
+   525→   525→    footShape.quadraticCurveTo(-0.05, -0.005, 0, 0.062)
+   526→   526→    const footGeo = new THREE.ExtrudeGeometry(footShape, {
+   527→   527→      depth: 0.032,
+   528→   528→      bevelEnabled: true,
+   529→   529→      bevelThickness: 0.012,
+   530→   530→      bevelSize: 0.012,
+   531→   531→      bevelSegments: 2,
+   532→   532→      curveSegments: 8,
+   533→   533→    })
+   534→   534→    footGeo.rotateX(-Math.PI / 2)
+   535→   535→    for (const zs of [0.145, -0.145]) {
+   536→   536→      const hip = new THREE.Group()
+   537→   537→      hip.position.set(0.03, 0.28, zs)
+   538→   538→      const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.16, 6, 12), this.matFeet)
+   539→   539→      thigh.position.set(0, -0.1, 0)
+   540→   540→      thigh.castShadow = true
+   541→   541→      hip.add(thigh)
+   542→   542→      const ankle = new THREE.Group()
+   543→   543→      ankle.position.set(0.015, -0.27, 0)
+   544→   544→      const foot = new THREE.Mesh(footGeo, this.matFeet)
+   545→   545→      foot.position.y = 0.012
+   546→   546→      foot.castShadow = true
+   547→   547→      ankle.add(foot)
+   548→   548→      hip.add(ankle)
+   549→   549→      this.squash.add(hip)
+   550→   550→      this.hips.push(hip)
+   551→   551→      this.feet.push(ankle)
+   552→   552→    }
+   553→   553→  }
+   554→   554→
+   555→   555→  // ---------------- expressive events (called by the controller) ----------------
+   556→   556→
+   557→   557→  onJump(): void {
+   558→   558→    // anticipation: a quick compress-and-rebound — the duck dips for a few
+   559→   559→    // frames, then the spring's rebound becomes the launch stretch
+   560→   560→    this.sqVel = -3.6
+   561→   561→    this.nodVel -= 2.2
+   562→   562→  }
+   563→   563→
+   564→   564→  /** The fling pose right after letting go of a swing. */
+   565→   565→  onRelease(): void {
+   566→   566→    this.flingT = 0.5
+   567→   567→    this.sqVel = 2.6
+   568→   568→  }
+   569→   569→
+   570→   570→  /** Brief celebratory bounce (checkpoint reached / section done). */
+   571→   571→  celebrate(): void {
+   572→   572→    this.celebT = 0.9
+   573→   573→    this.sqVel = 2.4
+   574→   574→  }
+   575→   575→
+   576→   576→  /** Cute recovery wobble right after respawning from a fall. */
+   577→   577→  dizzy(): void {
+   578→   578→    this.dizzyT = 1.15
+   579→   579→  }
+   580→   580→
+   581→   581→  /** Footstep callback hook fed from the controller's run-cycle phase. */
+   582→   582→  consumeStep(): boolean {
+   583→   583→    const half = Math.floor(this.runPhase / Math.PI)
+   584→   584→    if (half !== this.stepHalf) {
+   585→   585→      this.stepHalf = half
+   586→   586→      return true
+   587→   587→    }
+   588→   588→    return false
+   589→   589→  }
+   590→   590→
+   591→   591→  onLand(fallSpeed: number): void {
+   592→   592→    this.sqVel = -Math.min(9, 3.0 + fallSpeed * 0.4) // squash impulse
+   593→   593→    this.nodVel += 2.6
+   594→   594→    this.dust(fallSpeed > 6 ? 4 : 2)
+   595→   595→  }
+   596→   596→
+   597→   597→  onGrab(): void {
+   598→   598→    this.sqVel = 2.0
+   599→   599→    this.sparks(6)
+   600→   600→  }
+   601→   601→
+   602→   602→  private dust(n: number): void {
+   603→   603→    for (let i = 0; i < n; i++) {
+   604→   604→      const m = new THREE.Mesh(
+   605→   605→        this.dustGeo,
+   606→   606→        new THREE.MeshBasicMaterial({ color: 0xfff8ea, transparent: true, opacity: 0.75 }),
+   607→   607→      )
+   608→   608→      m.position.set((Math.random() - 0.5) * 0.2, 0.06, (Math.random() - 0.5) * 0.24)
+   609→   609→      this.particles.push({
+   610→   610→        mesh: m,
+   611→   611→        vx: (Math.random() - 0.5) * 1.6,
+   612→   612→        vy: 0.6 + Math.random() * 0.8,
+   613→   613→        spin: 0,
+   614→   614→        life: 0.38,
+   615→   615→        max: 0.38,
+   616→   616→        grow: 1.2,
+   617→   617→      })
+   618→   618→      this.root.add(m)
+   619→   619→    }
+   620→   620→  }
+   621→   621→
+   622→   622→  private sparks(n: number): void {
+   623→   623→    for (let i = 0; i < n; i++) {
+   624→   624→      const m = new THREE.Mesh(
+   625→   625→        this.sparkGeo,
+   626→   626→        new THREE.MeshBasicMaterial({
+   627→   627→          color: Math.random() > 0.5 ? 0xffc24d : 0xfff3c2,
+   628→   628→          transparent: true,
+   629→   629→          opacity: 0.95,
+   630→   630→        }),
+   631→   631→      )
+   632→   632→      const a = (i / n) * Math.PI * 2
+   633→   633→      m.position.set(Math.cos(a) * 0.22, 0.55 + Math.sin(a) * 0.3, (Math.random() - 0.5) * 0.2)
+   634→   634→      this.particles.push({
+   635→   635→        mesh: m,
+   636→   636→        vx: Math.cos(a) * 1.7,
+   637→   637→        vy: 1.6 + Math.random() * 1.2,
+   638→   638→        spin: (Math.random() - 0.5) * 12,
+   639→   639→        life: 0.42,
+   640→   640→        max: 0.42,
+   641→   641→        grow: 0.2,
+   642→   642→      })
+   643→   643→      this.root.add(m)
+   644→   644→    }
+   645→   645→  }
+   646→   646→
+   647→   647→  private streak(): void {
+   648→   648→    const m = new THREE.Mesh(
+   649→   649→      this.streakGeo,
+   650→   650→      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
+   651→   651→    )
+   652→   652→    m.scale.set(3.1, 0.32, 0.32)
+   653→   653→    m.position.set(-this.facing * (0.3 + Math.random() * 0.3), 0.35 + Math.random() * 0.7, (Math.random() - 0.5) * 0.4)
+   654→   654→    this.particles.push({
+   655→   655→      mesh: m,
+   656→   656→      vx: -this.facing * 2.4,
+   657→   657→      vy: 0.2,
+   658→   658→      spin: 0,
+   659→   659→      life: 0.24,
+   660→   660→      max: 0.24,
+   661→   661→      grow: 2.4,
+   662→   662→    })
+   663→   663→    this.root.add(m)
+   664→   664→  }
+   665→   665→
+   666→   666→  // ---------------- per-frame visual update ----------------
+   667→   667→
+   668→   668→  update(dt: number, s: DuckFrame): void {
+   669→   669→    this.t += dt
+   670→   670→
+   671→   671→    // contact shadow: hugs the ground below, fades as the duck climbs —
+   672→   672→    // doubles as a landing-spot readability cue over gaps
+   673→   673→    const h = Math.max(0, this.root.position.y - s.groundY)
+   674→   674→    const shadowVis = Math.max(0, 1 - h / 3.4)
+   675→   675→    const shadowMat = this.shadowMesh.material as THREE.MeshBasicMaterial
+   676→   676→    shadowMat.opacity = 0.9 * shadowVis
+   677→   677→    const shadowScale = 1 + Math.min(1.4, h * 0.16) * 0.3
+   678→   678→    this.shadowMesh.scale.set(shadowScale, shadowScale, 1)
+   679→   679→    this.shadowMesh.position.set(this.root.position.x, s.groundY + 0.035, 0)
+   680→   680→    this.shadowMesh.visible = shadowVis > 0.04 && s.groundY > -7
+   681→   681→
+   682→   682→    // squash & stretch spring (visual only — collider untouched)
+   683→   683→    const k = 240
+   684→   684→    const c = 17
+   685→   685→    this.sqVel += (-k * (this.sqY - 1) - c * this.sqVel) * dt
+   686→   686→    this.sqY += this.sqVel * dt
+   687→   687→    this.sqY = Math.min(1.32, Math.max(0.62, this.sqY))
+   688→   688→    const sx = 1 + (1 - this.sqY) * 0.62
+   689→   689→    this.squash.scale.set(sx, this.sqY, sx)
+   690→   690→
+   691→   691→    // facing ease (visual flip only)
+   692→   692→    const targetRot = this.facing === 1 ? 0 : Math.PI
+   693→   693→    this.root.rotation.y += (targetRot - this.root.rotation.y) * Math.min(1, dt * 14)
+   694→   694→
+   695→   695→    const speedAbs = Math.abs(s.vx)
+   696→   696→    const localVx = s.vx * this.facing
+   697→   697→    const runAmt = Math.min(1, speedAbs / 4.2)
+   698→   698→    this.celebT = Math.max(0, this.celebT - dt)
+   699→   699→    this.dizzyT = Math.max(0, this.dizzyT - dt)
+   700→   700→    this.flingT = Math.max(0, this.flingT - dt)
+   701→   701→    const celeb = this.celebT > 0 ? Math.sin((1 - this.celebT / 0.9) * Math.PI) : 0
+   702→   702→    const dizzy = this.dizzyT > 0 ? Math.sin(this.dizzyT / 1.15 * Math.PI) : 0
+   703→   703→    const fling = this.flingT > 0 ? Math.sin((1 - this.flingT / 0.5) * Math.PI) : 0
+   704→   704→
+   705→   705→    // pose blends
+   706→   706→    this.sitBlend += ((s.swinging ? 1 : 0) - this.sitBlend) * Math.min(1, dt * 9)
+   707→   707→    this.airBlend += ((s.grounded || s.swinging ? 0 : 1) - this.airBlend) * Math.min(1, dt * 9)
+   708→   708→
+   709→   709→    // run cycle phase
+   710→   710→    if (s.grounded && !s.swinging && speedAbs > 0.25) {
+   711→   711→      this.runPhase += dt * (5 + speedAbs * 2.4)
+   712→   712→    }
+   713→   713→    const w = this.runPhase
+   714→   714→
+   715→   715→    // body bounce + forward lean (+ celebration hop wiggle / dizzy wobble)
+   716→   716→    const bounce = s.grounded && !s.swinging ? Math.abs(Math.sin(w)) * 0.05 * runAmt : 0
+   717→   717→    const leanTarget = s.swinging
+   718→   718→      ? 0
+   719→   719→      : s.grounded
+   720→   720→        ? Math.max(-0.18, Math.min(0.18, localVx * 0.045))
+   721→   721→        : Math.max(-0.14, Math.min(0.14, localVx * 0.022)) + (s.falling ? 0.1 : -0.06)
+   722→   722→    this.lean += (leanTarget - this.lean) * Math.min(1, dt * 10)
+   723→   723→    this.bodyGrp.rotation.z =
+   724→   724→      -this.lean + 0.1 * this.sitBlend + Math.sin(this.t * 14) * 0.09 * celeb + Math.sin(this.t * 9) * 0.11 * dizzy
+   725→   725→    this.bodyGrp.position.y = bounce + celeb * 0.05
+   726→   726→    this.bodyGrp.rotation.y = Math.sin(this.t * 4.5) * 0.2 * dizzy
+   727→   727→
+   728→   728→    // gentle breathing while idle
+   729→   729→    const idle = s.grounded && speedAbs < 0.25 && !s.swinging
+   730→   730→    const breathe = idle ? Math.sin(this.t * 2.4) * 0.014 : 0
+   731→   731→    this.bodyGrp.scale.set(1 + breathe * 0.6, 1 + breathe, 1 + breathe * 0.6)
+   732→   732→
+   733→   733→    // neck: counter-sways while running, hangs along the rope while
+   734→   734→    // swinging (partial counter so the head leads the arc gracefully),
+   735→   735→    // curious tilts while idle, stretches forward in flight
+   736→   736→    let neckRot = -this.lean * 0.5
+   737→   737→    if (s.swinging) {
+   738→   738→      neckRot += -s.tilt * this.facing * 0.42 + s.pump * 0.14 + Math.sin(this.t * 1.8) * 0.03
+   739→   739→    }
+   740→   740→    if (this.airBlend > 0.5) neckRot += ((s.falling ? -0.06 : 0.16) + fling * 0.18) * this.airBlend
+   741→   741→    if (idle) {
+   742→   742→      this.curiosityIn -= dt
+   743→   743→      if (this.curiosityIn <= 0) {
+   744→   744→        this.curiosityTarget = (Math.random() - 0.5) * 0.34
+   745→   745→        this.curiosityIn = 2.4 + Math.random() * 3
+   746→   746→      }
+   747→   747→      this.curiosity += (this.curiosityTarget - this.curiosity) * Math.min(1, dt * 2.2)
+   748→   748→      neckRot += this.curiosity + Math.sin(this.t * 2.4) * 0.015
+   749→   749→    } else {
+   750→   750→      this.curiosity *= Math.max(0, 1 - dt * 5)
+   751→   751→    }
+   752→   752→    this.neckGrp.rotation.z += (neckRot - this.neckGrp.rotation.z) * Math.min(1, dt * 8)
+   753→   753→
+   754→   754→    // head: landing nod spring (+ celebration nod / dizzy head-shake),
+   755→   755→    // occasional idle glance toward the player
+   756→   756→    this.nodVel += (-160 * this.nod - 12 * this.nodVel) * dt
+   757→   757→    this.nod += this.nodVel * dt
+   758→   758→    this.headGrp.rotation.z =
+   759→   759→      Math.max(-0.5, Math.min(0.5, this.nod)) +
+   760→   760→      (s.won ? Math.sin(this.t * 6) * 0.06 : 0) +
+   761→   761→      celeb * Math.sin(this.t * 11) * 0.14 +
+   762→   762→      dizzy * Math.sin(this.t * 12) * 0.2
+   763→   763→    this.glanceIn -= dt
+   764→   764→    if (this.glanceIn <= 0 && idle) {
+   765→   765→      this.glanceTarget = (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.25)
+   766→   766→      this.glanceLeft = 0.9 + Math.random() * 0.4
+   767→   767→      this.glanceIn = 4 + Math.random() * 4
+   768→   768→    }
+   769→   769→    if (this.glanceLeft > 0) this.glanceLeft -= dt
+   770→   770→    const glance = idle && this.glanceLeft > 0 ? this.glanceTarget : 0
+   771→   771→    this.headGrp.rotation.y += (glance - this.headGrp.rotation.y) * Math.min(1, dt * 5)
+   772→   772→
+   773→   773→    // tail: happy wag on celebration/dizzy, a lazy sway when idle
+   774→   774→    const wagAmp = celeb * 0.5 + dizzy * 0.3
+   775→   775→    this.tailGrp.rotation.y = Math.sin(this.t * 11) * wagAmp + Math.sin(this.t * 1.3) * 0.06
+   776→   776→    this.tailGrp.rotation.z = 0.55 + celeb * 0.2
+   777→   777→
+   778→   778→    // rope alignment while swinging: the body hangs along the rope (world
+   779→   779→    // rotation = +theta; facing flips the local sign), eased softly
+   780→   780→    const tiltTarget = s.swinging ? s.tilt * this.facing * 0.78 : 0
+   781→   781→    this.squash.rotation.z += (tiltTarget - this.squash.rotation.z) * Math.min(1, dt * 12)
+   782→   782→    // sit deep onto the plank: butt back onto the seat, feet forward
+   783→   783→    this.squash.position.y += (-0.26 * this.sitBlend - this.squash.position.y) * Math.min(1, dt * 10)
+   784→   784→    this.squash.position.x += (-0.05 * this.sitBlend - this.squash.position.x) * Math.min(1, dt * 10)
+   785→   785→
+   786→   786→    // legs: walk cycle / airborne tuck & reach / forward sit dangle
+   787→   787→    const stepAmp = 0.55 * runAmt
+   788→   788→    const lag = s.swinging ? -s.tilt * this.facing * 0.3 + s.pump * 0.06 : 0
+   789→   789→    for (let i = 0; i < 2; i++) {
+   790→   790→      const hip = this.hips[i]
+   791→   791→      const ankle = this.feet[i]
+   792→   792→      const phase = w + (i === 0 ? 0 : Math.PI)
+   793→   793→      const standHip = Math.sin(phase) * stepAmp
+   794→   794→      const standFoot = -standHip * 0.85
+   795→   795→      const airHip = -0.38 + (s.falling ? 0.28 : 0) - fling * 0.3
+   796→   796→      const airFoot = s.falling ? 0.22 : 0.05
+   797→   797→      const sitHip = 1.15 + lag + Math.sin(this.t * 2.2 + i * 1.7) * 0.07
+   798→   798→      const sitFoot = -0.3 + Math.sin(this.t * 2.2 + i * 1.7 + 0.6) * 0.08
+   799→   799→      const targetHip = standHip + (airHip - standHip) * this.airBlend
+   800→   800→      const targetFoot = standFoot + (airFoot - standFoot) * this.airBlend
+   801→   801→      const blendedHip = targetHip + (sitHip - targetHip) * this.sitBlend
+   802→   802→      const blendedFoot = targetFoot + (sitFoot - targetFoot) * this.sitBlend
+   803→   803→      hip.rotation.z += (blendedHip - hip.rotation.z) * Math.min(1, dt * 14)
+   804→   804→      ankle.rotation.z += (blendedFoot - ankle.rotation.z) * Math.min(1, dt * 14)
+   805→   805→    }
+   806→   806→
+   807→   807→    // wings: tucked at rest · flutter on run · spread in air · hold the
+   808→   808→    // ropes when sitting · flare on release · big proud flaps when celebrating
+   809→   809→    let wingTarget: number
+   810→   810→    let wingSpeed = 0
+   811→   811→    if (s.won || celeb > 0.2) {
+   812→   812→      wingTarget = -1.5
+   813→   813→      wingSpeed = 15
+   814→   814→    } else if (fling > 0.15) {
+   815→   815→      wingTarget = -1.1
+   816→   816→      wingSpeed = 9
+   817→   817→    } else if (s.swinging) {
+   818→   818→      wingTarget = -2.45 + s.pump * 0.12
+   819→   819→    } else if (!s.grounded) {
+   820→   820→      wingTarget = s.fast ? -0.9 : -1.25
+   821→   821→      wingSpeed = s.fast ? 13 : 7
+   822→   822→    } else {
+   823→   823→      wingTarget = 0.05 + Math.abs(Math.sin(w)) * 0.1 * runAmt
+   824→   824→    }
+   825→   825→    for (let i = 0; i < 2; i++) {
+   826→   826→      const wing = this.wings[i]
+   827→   827→      const flap = wingSpeed > 0 ? Math.sin(this.t * wingSpeed + (i === 0 ? 0 : 0.35)) * 0.4 : 0
+   828→   828→      wing.rotation.z += (wingTarget + flap - wing.rotation.z) * Math.min(1, dt * 12)
+   829→   829→    }
+   830→   830→
+   831→   831→    // blink (wide eyes when falling, happy squint on victory)
+   832→   832→    this.blinkIn -= dt
+   833→   833→    if (this.blinkIn <= 0) {
+   834→   834→      this.blinkLeft = 0.12
+   835→   835→      this.blinkIn = 2 + Math.random() * 2.6
+   836→   836→    }
+   837→   837→    if (this.blinkLeft > 0) this.blinkLeft -= dt
+   838→   838→    const eyeY = s.won || celeb > 0.2 ? 0.42 : this.blinkLeft > 0 ? 0.12 : s.falling && !s.swinging ? 1.3 : 1
+   839→   839→    const eyeX = dizzy > 0 ? 1 + Math.sin(this.t * 16) * 0.3 : 1
+   840→   840→    for (const e of this.eyes) {
+   841→   841→      e.scale.y += (eyeY - e.scale.y) * Math.min(1, dt * 30)
+   842→   842→      e.scale.x += (eyeX - e.scale.x) * Math.min(1, dt * 20)
+   843→   843→    }
+   844→   844→
+   845→   845→    // wind streaks while flying fast
+   846→   846→    this.streakIn -= dt
+   847→   847→    if (s.fast && this.streakIn <= 0) {
+   848→   848→      this.streak()
+   849→   849→      this.streakIn = 0.055
+   850→   850→    }
+   851→   851→
+   852→   852→    // particles
+   853→   853→    for (let i = this.particles.length - 1; i >= 0; i--) {
+   854→   854→      const p = this.particles[i]
+   855→   855→      p.life -= dt
+   856→   856→      if (p.life <= 0) {
+   857→   857→        this.root.remove(p.mesh)
+   858→   858→        ;(p.mesh.material as THREE.Material).dispose()
+   859→   859→        this.particles.splice(i, 1)
+   860→   860→        continue
+   861→   861→      }
+   862→   862→      p.vy -= (p.grow < 1 ? 1.2 : 5) * dt
+   863→   863→      p.mesh.position.x += p.vx * dt
+   864→   864→      p.mesh.position.y += p.vy * dt
+   865→   865→      if (p.spin !== 0) {
+   866→   866→        p.mesh.rotation.x += p.spin * dt
+   867→   867→        p.mesh.rotation.y += p.spin * 0.7 * dt
+   868→   868→      }
+   869→   869→      const k2 = p.life / p.max
+   870→   870→      const mat = p.mesh.material as THREE.MeshBasicMaterial
+   871→   871→      mat.opacity = k2 * (p.grow < 1 ? 0.95 : 0.75)
+   872→   872→      p.mesh.scale.multiplyScalar(1 + p.grow * dt * (1 - k2))
+   873→   873→    }
+   874→   874→  }
+   875→   875→}
+   876→   876→

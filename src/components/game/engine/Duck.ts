@@ -43,14 +43,20 @@ function smooth(a: number, b: number, t: number): number {
   return k * k * (3 - 2 * k)
 }
 
+function clampF(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v))
+}
+
 function bodyMat(): THREE.MeshPhysicalMaterial {
+  // V0.7: silkier toy finish — a touch rougher, softer coat so highlights
+  // read as velvet sheen instead of plastic glaze under the bright sun
   return new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     vertexColors: true,
-    roughness: 0.52,
+    roughness: 0.58,
     metalness: 0,
-    clearcoat: 0.35,
-    clearcoatRoughness: 0.5,
+    clearcoat: 0.26,
+    clearcoatRoughness: 0.62,
   })
 }
 
@@ -201,6 +207,7 @@ interface Particle {
 
 export interface DuckFrame {
   vx: number // world-space horizontal velocity
+  vy: number // world-space vertical velocity (drives air pitch, visual only)
   grounded: boolean
   swinging: boolean
   falling: boolean // airborne, dropping fast
@@ -237,7 +244,7 @@ export class Duck {
     clearcoat: 0.55,
     clearcoatRoughness: 0.4,
   })
-  private matFeet = toyMat(C.feet, 0.42)
+  private matFeet = toyMat(C.feet, 0.5)
   private matEye = new THREE.MeshStandardMaterial({ color: C.eye, roughness: 0.16, metalness: 0.1 })
 
   private dustGeo = new THREE.SphereGeometry(0.05, 6, 5)
@@ -297,6 +304,10 @@ export class Duck {
   private celebT = 0 // celebratory animation timer (checkpoint / section)
   private dizzyT = 0 // cute recovery animation timer (after respawn)
   private stepHalf = 0
+  private lastVx = 0
+  private accelSm = 0 // smoothed |vx| change — run acceleration anticipation
+  private flickT = 4 // idle tail-flick timer
+  private flickA = 0 // active tail-flick envelope
 
   constructor() {
     this.build()
@@ -363,65 +374,73 @@ export class Duck {
       22,
     )
     paintY(tailGeo, 0.0, 0.28)
-    this.tailGrp.position.set(-0.42, 0.7, 0)
-    this.tailGrp.rotation.z = 0.5 // tip points back-up
+    this.tailGrp.position.set(-0.37, 0.62, 0)
+    this.tailGrp.rotation.z = 0.45 // tip points back-up
     const tail = new THREE.Mesh(tailGeo, this.matBody)
-    tail.scale.setScalar(0.92)
+    tail.scale.setScalar(0.95)
     tail.castShadow = true
     this.tailGrp.add(tail)
     this.bodyGrp.add(this.tailGrp)
 
-    // ---- folded wings (small, tight to the shoulder, tips back-down) ----
+    // ---- folded wings (V0.7: almond shapes that HUG the flank) ----
+    // The old patch sat high on the back where the body curves away, so its
+    // edges floated in the air. The new wing sits lower on the vertical part
+    // of the flank, is rolled to follow the surface and tips back-down
+    // toward the tail like a real folded wing.
     const wingShape = new THREE.Shape()
-    wingShape.moveTo(0.09, 0.03)
-    wingShape.quadraticCurveTo(0.08, 0.12, -0.03, 0.125)
-    wingShape.quadraticCurveTo(-0.17, 0.12, -0.26, 0.02)
-    wingShape.quadraticCurveTo(-0.31, -0.04, -0.28, -0.075)
-    wingShape.quadraticCurveTo(-0.15, -0.1, -0.04, -0.085)
-    wingShape.quadraticCurveTo(0.05, -0.05, 0.09, 0.03)
+    wingShape.moveTo(0.2, 0.02)
+    wingShape.quadraticCurveTo(0.12, 0.12, -0.02, 0.14)
+    wingShape.quadraticCurveTo(-0.18, 0.145, -0.3, 0.05)
+    wingShape.quadraticCurveTo(-0.38, -0.02, -0.34, -0.06)
+    wingShape.quadraticCurveTo(-0.22, -0.1, -0.08, -0.09)
+    wingShape.quadraticCurveTo(0.06, -0.075, 0.2, 0.02)
     const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
       depth: 0.05,
       bevelEnabled: true,
-      bevelThickness: 0.018,
-      bevelSize: 0.018,
+      bevelThickness: 0.02,
+      bevelSize: 0.022,
       bevelSegments: 3,
       curveSegments: 10,
     })
     wingGeo.translate(0, 0, -0.025)
     // a second, smaller covert layer gives the folded wing real depth
     const covertGeo = wingGeo.clone()
-    for (const zs of [0.29, -0.29]) {
+    for (const zs of [0.3, -0.3]) {
       const g = new THREE.Group()
-      g.position.set(0.14, 0.82, zs)
+      g.position.set(0.1, 0.67, zs)
       const w = new THREE.Mesh(wingGeo, this.matWing)
-      w.scale.set(0.8, 0.8, 0.78)
+      w.scale.set(0.95, 0.95, 0.9)
       w.castShadow = true
-      w.rotation.y = zs > 0 ? -0.1 : 0.1
+      // wrap around the flank + roll the top edge toward the back line
+      w.rotation.y = zs > 0 ? -0.26 : 0.26
+      w.rotation.x = zs > 0 ? 0.07 : -0.07
       g.add(w)
       const w2 = new THREE.Mesh(covertGeo, this.matWing)
-      w2.scale.set(0.52, 0.52, 0.7)
-      w2.position.set(0.045, -0.028, zs > 0 ? 0.018 : -0.018)
-      w2.rotation.y = zs > 0 ? -0.1 : 0.1
+      w2.scale.set(0.58, 0.58, 0.75)
+      w2.position.set(0.05, -0.015, zs > 0 ? 0.02 : -0.02)
+      w2.rotation.y = zs > 0 ? -0.3 : 0.3
       g.add(w2)
-      g.rotation.z = -0.15
+      g.rotation.z = -0.18 // tips slope down toward the tail
       this.wings.push(g)
       this.bodyGrp.add(g)
     }
 
-    // ---- long elegant neck (tapered sweep) that merges into the head:
-    // the top rings stay slim and bury DEEP inside the skull so the visible
-    // junction is a clean throat line, never a snowman crease ----
-    this.neckGrp.position.set(0.26, 0.72, 0)
+    // ---- long elegant neck (V0.7): a gentle S-sweep that FLOWS out of the
+    // chest — the tube now starts deeper inside the body with a flared base
+    // ring so the throat line is continuous (no collar crease), sweeps a
+    // touch back low, then arcs forward into the head like the ornament ----
+    this.neckGrp.position.set(0.24, 0.7, 0)
+    this.neckGrp.rotation.z = -0.05
     const neck = new THREE.Mesh(
       taperedTube(
         [
-          [0, -0.18, 0],
-          [-0.01, 0.14, 0],
-          [0.02, 0.34, 0],
-          [0.07, 0.52, 0],
-          [0.1, 0.64, 0],
+          [0.02, -0.3, 0],
+          [0.0, 0.08, 0],
+          [-0.02, 0.3, 0],
+          [0.04, 0.5, 0],
+          [0.12, 0.62, 0],
         ],
-        [0.165, 0.134, 0.11, 0.112, 0.118],
+        [0.19, 0.15, 0.118, 0.112, 0.12],
       ),
       this.matBody,
     )
@@ -431,9 +450,9 @@ export class Duck {
     this.bodyGrp.add(this.neckGrp)
 
     // ---- head: rounded skull, the neck's slim tube merges deep into it ----
-    this.headGrp.position.set(0.1, 0.64, 0)
-    const skullGeo = new THREE.SphereGeometry(0.225, 28, 22)
-    skullGeo.scale(1.02, 0.95, 0.98)
+    this.headGrp.position.set(0.13, 0.63, 0)
+    const skullGeo = new THREE.SphereGeometry(0.24, 28, 22)
+    skullGeo.scale(1.03, 0.96, 0.98)
     paintY(skullGeo, -0.18, 0.24)
     const skull = new THREE.Mesh(skullGeo, this.matBody)
     skull.castShadow = true
@@ -458,7 +477,7 @@ export class Duck {
       26,
     )
     beakUpGeo.rotateZ(-Math.PI / 2)
-    beakUpGeo.scale(1, 0.6, 1.22)
+    beakUpGeo.scale(1, 0.6, 1.32)
     // gentle droop toward the tip
     {
       const p = beakUpGeo.getAttribute('position') as THREE.BufferAttribute
@@ -470,8 +489,8 @@ export class Duck {
     }
     paintX(beakUpGeo, 0.0, 0.21, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
     const beakUp = new THREE.Mesh(beakUpGeo, this.matBeak)
-    beakUp.position.set(0.15, -0.005, 0)
-    beakUp.rotation.z = -0.07
+    beakUp.position.set(0.16, -0.008, 0)
+    beakUp.rotation.z = -0.05
     beakUp.castShadow = true
     this.headGrp.add(beakUp)
 
@@ -488,17 +507,17 @@ export class Duck {
       22,
     )
     beakLoGeo.rotateZ(-Math.PI / 2)
-    beakLoGeo.scale(1, 0.42, 1.0)
+    beakLoGeo.scale(1, 0.42, 1.08)
     paintX(beakLoGeo, 0.0, 0.17, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
     const beakLo = new THREE.Mesh(beakLoGeo, this.matBeak)
-    beakLo.position.set(0.135, -0.072, 0)
+    beakLo.position.set(0.142, -0.076, 0)
     beakLo.rotation.z = 0.1
     this.headGrp.add(beakLo)
 
     // glossy bead eyes + catchlight (they read at phone size)
-    for (const zs of [0.165, -0.165]) {
+    for (const zs of [0.19, -0.19]) {
       const g = new THREE.Group()
-      g.position.set(0.11, 0.05, zs)
+      g.position.set(0.115, 0.05, zs)
       const bead = new THREE.Mesh(new THREE.SphereGeometry(0.047, 14, 12), this.matEye)
       bead.scale.set(1, 1.28, 0.62)
       const glow = new THREE.Mesh(
@@ -535,12 +554,12 @@ export class Duck {
     for (const zs of [0.145, -0.145]) {
       const hip = new THREE.Group()
       hip.position.set(0.03, 0.28, zs)
-      const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.16, 6, 12), this.matFeet)
-      thigh.position.set(0, -0.1, 0)
+      const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.12, 6, 12), this.matFeet)
+      thigh.position.set(0, -0.08, 0)
       thigh.castShadow = true
       hip.add(thigh)
       const ankle = new THREE.Group()
-      ankle.position.set(0.015, -0.27, 0)
+      ankle.position.set(0.015, -0.22, 0)
       const foot = new THREE.Mesh(footGeo, this.matFeet)
       foot.position.y = 0.012
       foot.castShadow = true
@@ -554,11 +573,13 @@ export class Duck {
 
   // ---------------- expressive events (called by the controller) ----------------
 
-  onJump(): void {
+  onJump(puff = false): void {
     // anticipation: a quick compress-and-rebound — the duck dips for a few
     // frames, then the spring's rebound becomes the launch stretch
     this.sqVel = -3.6
     this.nodVel -= 2.2
+    // a puff of turf only for real ground takeoffs (not swing releases)
+    if (puff) this.dust(2)
   }
 
   /** The fling pose right after letting go of a swing. */
@@ -600,6 +621,8 @@ export class Duck {
   }
 
   private dust(n: number): void {
+    // hard cap keeps bursts from ever stacking up on weak devices
+    if (this.particles.length > 80) return
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(
         this.dustGeo,
@@ -620,6 +643,7 @@ export class Duck {
   }
 
   private sparks(n: number): void {
+    if (this.particles.length > 80) return
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(
         this.sparkGeo,
@@ -645,6 +669,7 @@ export class Duck {
   }
 
   private streak(): void {
+    if (this.particles.length > 80) return
     const m = new THREE.Mesh(
       this.streakGeo,
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }),
@@ -695,6 +720,10 @@ export class Duck {
     const speedAbs = Math.abs(s.vx)
     const localVx = s.vx * this.facing
     const runAmt = Math.min(1, speedAbs / 4.2)
+    // smoothed acceleration magnitude (grounded launches get a lean-in)
+    const accel = Math.abs(s.vx - this.lastVx) / Math.max(dt, 1e-4)
+    this.lastVx = s.vx
+    this.accelSm += (Math.min(30, accel) - this.accelSm) * Math.min(1, dt * 6)
     this.celebT = Math.max(0, this.celebT - dt)
     this.dizzyT = Math.max(0, this.dizzyT - dt)
     this.flingT = Math.max(0, this.flingT - dt)
@@ -713,12 +742,17 @@ export class Duck {
     const w = this.runPhase
 
     // body bounce + forward lean (+ celebration hop wiggle / dizzy wobble)
+    // V0.7: accelerating from a standstill leans the duck INTO the run —
+    // the readable "anticipation" of a take-off, without touching physics
+    const accelLean = s.grounded && !s.swinging ? Math.min(0.09, this.accelSm * 0.006) : 0
     const bounce = s.grounded && !s.swinging ? Math.abs(Math.sin(w)) * 0.05 * runAmt : 0
     const leanTarget = s.swinging
       ? 0
       : s.grounded
-        ? Math.max(-0.18, Math.min(0.18, localVx * 0.045))
-        : Math.max(-0.14, Math.min(0.14, localVx * 0.022)) + (s.falling ? 0.1 : -0.06)
+        ? Math.max(-0.18, Math.min(0.18, localVx * 0.045)) + accelLean
+        : Math.max(-0.14, Math.min(0.14, localVx * 0.022)) +
+          clampF(-s.vy * 0.012, -0.06, 0.12) +
+          (s.falling ? 0.04 : 0)
     this.lean += (leanTarget - this.lean) * Math.min(1, dt * 10)
     this.bodyGrp.rotation.z =
       -this.lean + 0.1 * this.sitBlend + Math.sin(this.t * 14) * 0.09 * celeb + Math.sin(this.t * 9) * 0.11 * dizzy
@@ -737,6 +771,8 @@ export class Duck {
     if (s.swinging) {
       neckRot += -s.tilt * this.facing * 0.42 + s.pump * 0.14 + Math.sin(this.t * 1.8) * 0.03
     }
+    // sitting: lift the head gracefully (neck rises from the perch)
+    neckRot += 0.09 * this.sitBlend
     if (this.airBlend > 0.5) neckRot += ((s.falling ? -0.06 : 0.16) + fling * 0.18) * this.airBlend
     if (idle) {
       this.curiosityIn -= dt
@@ -770,18 +806,29 @@ export class Duck {
     const glance = idle && this.glanceLeft > 0 ? this.glanceTarget : 0
     this.headGrp.rotation.y += (glance - this.headGrp.rotation.y) * Math.min(1, dt * 5)
 
-    // tail: happy wag on celebration/dizzy, a lazy sway when idle
+    // tail: happy wag on celebration/dizzy, a lazy sway when idle, plus an
+    // occasional quick flick — small burst of life while standing around
+    this.flickT -= dt
+    if (this.flickT <= 0) {
+      this.flickA = 1
+      this.flickT = 4.5 + Math.random() * 4.5
+    }
+    this.flickA = Math.max(0, this.flickA - dt * 2.2)
     const wagAmp = celeb * 0.5 + dizzy * 0.3
-    this.tailGrp.rotation.y = Math.sin(this.t * 11) * wagAmp + Math.sin(this.t * 1.3) * 0.06
-    this.tailGrp.rotation.z = 0.55 + celeb * 0.2
+    this.tailGrp.rotation.y =
+      Math.sin(this.t * 11) * wagAmp + Math.sin(this.t * 1.3) * 0.06 + Math.sin(this.t * 17) * 0.3 * this.flickA
+    this.tailGrp.rotation.z = 0.45 + celeb * 0.2
 
     // rope alignment while swinging: the body hangs along the rope (world
     // rotation = +theta; facing flips the local sign), eased softly
     const tiltTarget = s.swinging ? s.tilt * this.facing * 0.78 : 0
     this.squash.rotation.z += (tiltTarget - this.squash.rotation.z) * Math.min(1, dt * 12)
-    // sit deep onto the plank: butt back onto the seat, feet forward
-    this.squash.position.y += (-0.26 * this.sitBlend - this.squash.position.y) * Math.min(1, dt * 10)
-    this.squash.position.x += (-0.05 * this.sitBlend - this.squash.position.x) * Math.min(1, dt * 10)
+    // V0.7 sit: perch ON the seat — feet/legs rest on the plank, body stays
+    // upright along the rope, head lifted. The old deep sink (-0.26) dropped
+    // the belly onto the plank and the sculpt's rear-lift read as "butt up,
+    // face down"; a shallow perch keeps the ornament's upright elegance.
+    this.squash.position.y += (-0.13 * this.sitBlend - this.squash.position.y) * Math.min(1, dt * 10)
+    this.squash.position.x += (-0.02 * this.sitBlend - this.squash.position.x) * Math.min(1, dt * 10)
 
     // legs: walk cycle / airborne tuck & reach / forward sit dangle
     const stepAmp = 0.55 * runAmt
@@ -794,8 +841,8 @@ export class Duck {
       const standFoot = -standHip * 0.85
       const airHip = -0.38 + (s.falling ? 0.28 : 0) - fling * 0.3
       const airFoot = s.falling ? 0.22 : 0.05
-      const sitHip = 1.15 + lag + Math.sin(this.t * 2.2 + i * 1.7) * 0.07
-      const sitFoot = -0.3 + Math.sin(this.t * 2.2 + i * 1.7 + 0.6) * 0.08
+      const sitHip = 0.82 + lag + Math.sin(this.t * 2.2 + i * 1.7) * 0.07
+      const sitFoot = -0.5 + Math.sin(this.t * 2.2 + i * 1.7 + 0.6) * 0.08
       const targetHip = standHip + (airHip - standHip) * this.airBlend
       const targetFoot = standFoot + (airFoot - standFoot) * this.airBlend
       const blendedHip = targetHip + (sitHip - targetHip) * this.sitBlend
@@ -824,7 +871,9 @@ export class Duck {
     }
     for (let i = 0; i < 2; i++) {
       const wing = this.wings[i]
-      const flap = wingSpeed > 0 ? Math.sin(this.t * wingSpeed + (i === 0 ? 0 : 0.35)) * 0.4 : 0
+      // falling fast: a tiny panic flutter (wide eyes already sell the fall)
+      const flapAmp = s.falling && !s.swinging ? 0.55 : 0.4
+      const flap = wingSpeed > 0 ? Math.sin(this.t * wingSpeed + (i === 0 ? 0 : 0.35)) * flapAmp : 0
       wing.rotation.z += (wingTarget + flap - wing.rotation.z) * Math.min(1, dt * 12)
     }
 

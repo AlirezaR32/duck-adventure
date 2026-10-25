@@ -477,22 +477,25 @@
           advance()
         }
       } else if (l3ph.phase === 1) {
-        // wait for the elevator to come low
+        // wait for the elevator to come low, then hop across HOLDING RIGHT
+        // (a standing jump can never reach the slab — V0.7 harness fix)
         D.sim(1)
         steps++
         s = st()
         if (s.moverTop <= 1.75 && s.moverTop >= 1.0) {
+          D.press('right', true)
           D.press('jump', true)
           D.sim(1)
           D.press('jump', false)
           advance()
         }
       } else if (l3ph.phase === 2) {
-        // land on the elevator
+        // land on the elevator (right held through the hop), then stop
         D.sim(1)
         steps++
         s = st()
         if (s.onGround && s.x > 52.6) {
+          D.press('right', false)
           advance()
         } else if (!s.onGround && s.y < 0.4) {
           throw new Error('l3_drive: fell off while boarding M2 ' + j(s))
@@ -538,12 +541,13 @@
           if (s.swinging) advance()
         }
       } else if (l3ph.phase === 6) {
-        // pump toward 2.5 omega
+        // pump toward 2.5 omega — POSITIVE only: releaseWhen's window needs
+        // omega > +2.0, so exiting on a leftward peak would deadlock (V0.7 fix)
         D.press('right', true)
         D.sim(1)
         steps++
         s = st()
-        if (Math.abs(s.omega) >= 2.5) {
+        if (s.omega >= 2.5) {
           D.press('right', false)
           D.releaseWhen(2.0, 0.65, 1.05)
           advance()

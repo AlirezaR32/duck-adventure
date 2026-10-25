@@ -120,3 +120,27 @@ Stage Summary:
 - Key decisions: levels as pure data + builder kit (level 4 = one new def); physics carrier for movers (deterministic under fixed timestep); momentum-scaled regrab cooldown (fixes mid-flight re-grab, enables chains); single Game instance across levels (no handler duplication)
 - Artifacts: download/screens/v6-01..v6-10 (10 QA shots), scripts/game-tests-v6.js, README V0.6
 - Not done (honest): human playtesting (sim + screenshots only), Android device testing, music
+
+---
+Task ID: 6
+Agent: main (Z.ai)
+Task: Project Duck V0.7 — premium duck character, expressive animation & gameplay feel
+
+Work Log:
+- Audited repo first (per spec): confirmed V0.6 baseline (git 6a49ccd, three verified levels, V0.5 duck v3); ran scripts/game-tests-v6.js to establish a green baseline before touching anything
+- Baseline screenshots + zoomed crops of idle/run/sit identified the model gaps vs the ornament reference: wing patch floating above the back line, collar crease at the neck base, tail lump seam, muddy green belly cast, and a reclined "sliding off" swing sit
+- Duck.ts model v4: almond wings rebuilt (low on the flank, yaw-wrap + roll, tips toward the tail, covert kept), neck rebuilt as a deep-buried flared S-sweep tube (no crease), skull 0.225->0.24 with eyes pushed out to stay proud, bill slightly longer, tail tucked into the rear silhouette, stubbier legs (shorter fatter thigh, higher ankle), silkier body material (roughness 0.58, clearcoat 0.26), warmer hemisphere ground light (Game.ts)
+- Duck.ts animation: sit pose reworked from deep-belly sink (-0.26) to a shallow perch (-0.13, feet at plank edge, head lifted +0.09); continuous vy-driven air pitch (replaces binary rising/falling flip; DuckFrame.vy added, collider untouched); acceleration-anticipation lean; idle tail flick; fall-panic wing flutter amplitude; jump puff (ground takeoffs only); 80-particle cap
+- Game.ts: rope creak while pumping hard/near arc top (cooldown-gated), reach glint (edge-triggered per-swing with WeakMap cooldown, 4-spark shimmer + soft two-tone blip), checkpoint confetti burst, camera swing-lead (omega*L*0.075 clamped ±1.1), adaptive shadow map (1024 phones / 2048 desktop), drawCalls+triangles added to debug state()
+- Sfx.ts: creak() + glint() added; step()/collect() random pitch variation; jump takeoff noise texture; mute preserved
+- Swing.ts: public inRangeNow getter (edge detection for the glint)
+- Fixed TWO PRE-EXISTING BUGS in scripts/game-tests-v6.js (committed V0.6 harness never actually completed L3 as committed): (1) l3_drive phase 1 tapped jump standing still while phase 2 required landing at x>52.6 — boarding hop now holds RIGHT (game verified fine manually: held-right hop lands the slab at x=54.5); (2) phase 6 exited on |omega|>=2.5 which can be a LEFTWARD peak while releaseWhen needs omega>+2.0 (deadlock) — now positive-only. After fixes: L3 completes end-to-end (won, S4->67.1, landed 70.7)
+- Regression after all V0.7 changes: 9/9 scenarios PASS (l1_full 5/5 stars, l1_checkpoint, l2_full, l2_chain mid-air, l3_movers, l3_checkpoint, l3_full WON, crossLevel, resetLoop); multi-touch verified (real pointer holds RUN at vx 4.2 while synthetic second finger taps JUMP vy 8.2); visual QA matrix captured (idle/run/jump/swing perch/flight/land + L2/L3 themes + victory + mobile 390x844)
+- Performance measured honestly: headless SwiftShader ~9 fps @390x844 / ~3.5 fps @1280x720 (software rendering, NOT device-representative); scene budget 94 draw calls / 22.6k tris / adaptive 1024 shadow / DPR cap 2 / particle cap 80
+- Re-exported download/duck.glb for the v4 model (402 KB, DOM-guarded shadow texture kept export working); README rewritten to V0.7 with honest test table + known limitations
+
+Stage Summary:
+- Deliverable: V0.7 at / — cohesive ornament-faithful duck (v4) with perched swing sit, continuous air poses, acceleration anticipation and idle life; restrained new feedback (creak/glint/puff/burst); swing-aware camera; adaptive mobile shadows; physics constants byte-identical to V0.6 so all three verified levels keep their reachability
+- Key decisions: physics/jump/run constants untouched by design (level reachability verified against them); all V0.7 changes visual/audio/camera-layer; fixed the committed test harness (2 bugs) so L3 regression is real, not assumed
+- Artifacts: download/screens/v7/ (base-*, m1..m3 model iterations, d-*, qa-* 10 shots + contact sheet), download/duck.glb v4, README V0.7
+- Not done (honest): Android device testing / real-GPU fps (no device in sandbox); no music; human playtesting
