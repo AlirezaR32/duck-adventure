@@ -20,6 +20,8 @@ import {
   rng,
   starGeometry,
   THEMES,
+  thornBurr,
+  type HazardRT,
   type Kit,
   type MoverBuild,
   type PlatDef,
@@ -45,6 +47,8 @@ export interface LevelHandle {
   platforms: PlatDef[]
   checkpoints: CheckpointDef[]
   movers: MoverBuild[]
+  /** Live hazard instances (collision positions come from their groups). */
+  hazards: HazardRT[]
   update: (t: number) => void
   setCheckpointActive: (i: number) => void
   dispose: () => void
@@ -65,6 +69,7 @@ export function buildLevelRuntime(scene: THREE.Scene, world: PhysicsWorld, def: 
   for (const p of def.platforms) island(kit, p)
   for (const ped of def.pedestals) pedestal(kit, ped.x, ped.top)
   const movers = def.movers.map((m) => movingPlatform(kit, m.cx, m.top, m.w, m.motion))
+  const hazards: HazardRT[] = (def.hazards ?? []).map((h) => thornBurr(kit, h))
 
   // ---- left boundary wall (invisible) ----
   world.add(def.spawnX - 3.8, 2, 0.8, 10)
@@ -106,6 +111,7 @@ export function buildLevelRuntime(scene: THREE.Scene, world: PhysicsWorld, def: 
     platforms: def.platforms,
     checkpoints: def.checkpoints,
     movers,
+    hazards,
     setCheckpointActive: (i: number) => {
       const mat = cpMaterials[i]
       if (!mat) return

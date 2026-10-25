@@ -521,6 +521,11 @@ export class Game {
 
     this.collectStars()
 
+    // ---- hazards: a thorn burr prick sends you back to the checkpoint.
+    // Checked every ground/air step (swing arcs stay above burr zones by
+    // design, so the attached branch skips this.)
+    if (this.checkHazards()) this.respawn(true)
+
     // ---- safe recovery when falling out of the level ----
     if (b.y < this.killY) this.respawn(true)
 
@@ -543,6 +548,26 @@ export class Game {
 
     this.syncDuck(dt, 0)
     this.updateCamera(dt)
+  }
+
+  // ============================ hazards ============================
+
+  /** True when the duck touches a live hazard (its group tracks the patrol). */
+  private checkHazards(): boolean {
+    const hs = this.level?.hazards
+    if (!hs || hs.length === 0) return false
+    const b = this.body
+    for (const h of hs) {
+      const p = h.group.position
+      const dx = b.x - p.x
+      const dy = b.y - p.y
+      if (dx * dx + dy * dy < h.r * h.r) {
+        this.burst(p.x, p.y + 0.35, 8)
+        this.sfx.prick()
+        return true
+      }
+    }
+    return false
   }
 
   // ============================ stars ============================
@@ -935,6 +960,16 @@ export class Game {
             moverTop = box.cy + box.hh
           }
         }
+        // nearest live hazard (burr timing is tested against this)
+        let hazardX = 0
+        let hazardD = Infinity
+        for (const h of this.level?.hazards ?? []) {
+          const d = Math.abs(this.body.x - h.group.position.x)
+          if (d < hazardD) {
+            hazardD = d
+            hazardX = h.group.position.x
+          }
+        }
         return {
           time: this.time,
           level: this.levelIdx,
@@ -954,8 +989,11 @@ export class Game {
           swings: this.swings.length,
           checkpoints: this.checkpoints.length,
           movers: this.moverBoxes.length,
+          hazards: this.level?.hazards.length ?? 0,
           moverX: Math.round(moverX * 100) / 100,
           moverTop: Math.round(moverTop * 100) / 100,
+          hazardX: Math.round(hazardX * 100) / 100,
+          hazardD: Math.round(hazardD * 100) / 100,
           nearD: Math.round(nearD * 100) / 100,
           inRange,
           maxSwingOmega: Math.round(maxSwingOmega * 100) / 100,

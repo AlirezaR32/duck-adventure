@@ -124,6 +124,11 @@ export class Sfx {
   glint(): void {
     this.tone({ f0: 1180, f1: 1560, dur: 0.09, type: 'sine', vol: 0.045 })
   }
+  /** Short "ouch" prick when the duck bumps a thorn burr. Quiet, comical. */
+  prick(): void {
+    this.tone({ f0: 330, f1: 95, dur: 0.13, type: 'sawtooth', vol: 0.06 })
+    this.noise(0.07, 0.045, 1500, 320)
+  }
   release(): void {
     this.noise(0.24, 0.13, 500, 2400)
   }

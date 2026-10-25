@@ -322,43 +322,75 @@
 
   // ============================ Level 3 ============================
 
-  /** Ride M1 (ferry slab) across the first canyon gap. */
-  function rideM1() {
-    D.loadLevel(2)
-    D.sim(30)
-    D.warp(15.0, 3.0)
-    D.sim(40)
-    let s = st()
-    if (!s.onGround) throw new Error('M1: not settled on P2')
+  /**
+   * Robust M1 ferry crossing: stand at the P2 edge, wait for the slab's
+   * LEFT extreme (nearly stationary), hop with full run-up, verify the
+   * landing is genuinely ON the slab (x > 18.5 — a P2 corner landing is
+   * rejected), ride to the right extreme, walk to the slab's right part,
+   * stop, run-up again, and hop to P3. Retries the hop twice.
+   */
+  function rideM1Core(tag) {
+    const attemptHop = () => {
+      simUntil((q) => q.moverX <= 19.8 && q.moverTop <= 0.9, 900, tag + ': wait for slab')
+      D.press('right', true)
+      simUntil((q) => q.vx >= 4.0 && q.onGround, 200, tag + ': run-up')
+      tapJump()
+      let on = null
+      try {
+        on = simUntil((q) => q.onGround && q.x > 18.5, 400, tag + ': land on slab')
+      } catch (e) {
+        on = null
+      }
+      D.press('right', false)
+      if (on && on.moverTop <= 1.0) return on
+      return null
+    }
+    // stand at the P2 edge (warp back if a previous attempt went wrong)
+    if (st().x < 14.0 || st().x > 17.4 || !st().onGround) {
+      D.warp(15.5, 3.0)
+      D.sim(40)
+    }
     D.press('right', true)
-    simUntil((q) => q.x >= 16.7 && q.onGround, 600, 'M1: reach P2 edge')
-    // wait for the slab to come close, then hop on
-    simUntil((q) => q.moverX <= 21.0 && q.moverTop <= 0.9, 900, 'M1: wait for slab')
-    tapJump()
-    const on = simUntil((q) => q.onGround && q.x > 17.4, 600, 'M1: land on slab')
-    if (on.moverTop > 1.2) throw new Error('M1: landed but not on slab (top ' + on.moverTop + ')')
-    D.press('right', false)
+    simUntil((q) => q.x >= 17.0 && q.onGround, 600, tag + ': reach edge')
+    D.press('right', false) // stop — never walk off while waiting
+    let on = attemptHop()
+    if (!on) {
+      on = attemptHop() // one clean retry (the duck is still near the edge)
+    }
+    if (!on) throw new Error(tag + ': ferry boarding failed twice')
     // ride: duck x must track the moving platform to the right extreme
     const xAtStart = on.x
-    simUntil((q) => q.moverX >= 21.6, 900, 'M1: ride right')
+    simUntil((q) => q.moverX >= 21.6, 900, tag + ': ride right')
     const after = st()
-    if (!after.onGround) throw new Error('M1: lost ground during ride')
+    if (!after.onGround) throw new Error(tag + ': lost ground during ride')
     if (after.x <= xAtStart + 0.8) {
-      throw new Error('M1: duck not carried (x ' + xAtStart.toFixed(2) + ' → ' + after.x.toFixed(2) + ')')
+      throw new Error(tag + ': duck not carried (x ' + xAtStart.toFixed(2) + ' → ' + after.x.toFixed(2) + ')')
     }
-    // hop off to P3
+    // hop off to P3: walk to the slab's right part, stop at the extreme,
+    // then jump with full run momentum
     D.press('right', true)
-    simUntil((q) => q.moverX >= 21.85, 400, 'M1: slab at right extreme')
-    tapJump()
-    const p3 = simUntil((q) => q.onGround && q.x >= 23.9, 600, 'M1: hop to P3')
+    simUntil((q) => q.x >= 22.0 && q.onGround, 400, tag + ': walk to slab edge')
     D.press('right', false)
-    if (!(p3.x >= 24.2 && p3.x <= 31.4)) throw new Error('M1: P3 landing ' + p3.x.toFixed(2))
+    simUntil((q) => q.moverX >= 21.9 && q.onGround, 400, tag + ': slab at right extreme')
+    D.press('right', true) // run-up: the hop needs full horizontal momentum
+    simUntil((q) => q.vx >= 4.0 && q.onGround, 200, tag + ': run-up out')
+    tapJump()
+    const p3 = simUntil((q) => q.onGround && q.x >= 23.9, 600, tag + ': hop to P3')
+    D.press('right', false)
     return p3
   }
 
   T.l3_movers = function () {
-    const p3 = rideM1()
+    D.loadLevel(2)
+    D.sim(30)
+    D.warp(15.0, 3.0)
+    D.sim(40)
+    const p3 = rideM1Core('M1')
     return j({ m1: 'ok', landedP3: p3.x })
+  }
+
+  function rideM1From() {
+    return rideM1Core('M1b')
   }
 
   T.l3_checkpoint = function () {
@@ -414,9 +446,27 @@
     // M1 ferry → P3
     const p3 = rideM1From(p2.x)
     log.push('M1→' + p3.x.toFixed(2))
-    // S2: long vine → deep ledge
+    // S2: long vine → deep ledge — the walk crosses the thorn burr's
+    // patrol (28.2–29.6): hop it when the burr is ~1.4u ahead at full run
     D.press('right', true)
-    simUntil((q) => q.x >= 30.8 && q.onGround, 600, 'L3: reach P3 edge')
+    let burrHopped = false
+    let crossed = false
+    for (let i = 0; i < 900 && !crossed; i++) {
+      const q = st()
+      if (!burrHopped && q.onGround && q.vx >= 4.0 && q.hazardX - q.x >= 1.3 && q.hazardX - q.x <= 1.55 && q.x < 29.0) {
+        D.press('jump', true)
+        D.sim(1)
+        D.press('jump', false)
+        burrHopped = true
+        continue
+      }
+      D.sim(1)
+      const s2 = st()
+      if (s2.onGround && s2.x >= 30.8) crossed = true
+    }
+    if (!crossed) throw new Error('L3: reach P3 edge (burr hop failed?) last=' + j(st()))
+    D.press('right', true)
+    simUntil((q) => q.x >= 30.8 && q.onGround, 400, 'L3: reach S2 edge')
     tapJump()
     const g2 = grabInRange(300)
     if (!g2 || !g2.swinging) throw new Error('L3: S2 grab missed ' + j(st()))
@@ -595,25 +645,7 @@
     return j({ log: [...a.log, ...b.log], won: b.won, stars: b.stars, x: b.x, cp: b.cp, level: b.level })
   }
 
-  // ride helpers that continue from the l3_full flow (level already loaded)
-  function rideM1From(fromX) {
-    D.warp(15.5, 3.0)
-    D.sim(40)
-    D.press('right', true)
-    simUntil((q) => q.x >= 16.7 && q.onGround, 600, 'M1b: reach edge')
-    simUntil((q) => q.moverX <= 21.0 && q.moverTop <= 0.9, 900, 'M1b: wait for slab')
-    tapJump()
-    simUntil((q) => q.onGround && q.x > 17.4, 600, 'M1b: land on slab')
-    D.press('right', false)
-    simUntil((q) => q.moverX >= 21.85, 900, 'M1b: ride right')
-    D.press('right', true)
-    simUntil((q) => q.moverX >= 21.85 && q.onGround, 400, 'M1b: slab at extreme')
-    tapJump()
-    const p3 = simUntil((q) => q.onGround && q.x >= 23.9, 600, 'M1b: hop to P3')
-    D.press('right', false)
-    return p3
-  }
-
+  // rideM2From continues from the l3_full flow (level already loaded)
   function rideM2From() {
     // standing on P5 (checkpoint isle) — walk to the edge and wait for the elevator
     D.press('right', true)

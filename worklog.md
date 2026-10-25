@@ -144,3 +144,26 @@ Stage Summary:
 - Key decisions: physics/jump/run constants untouched by design (level reachability verified against them); all V0.7 changes visual/audio/camera-layer; fixed the committed test harness (2 bugs) so L3 regression is real, not assumed
 - Artifacts: download/screens/v7/ (base-*, m1..m3 model iterations, d-*, qa-* 10 shots + contact sheet), download/duck.glb v4, README V0.7
 - Not done (honest): Android device testing / real-GPU fps (no device in sandbox); no music; human playtesting
+
+---
+Task ID: 7
+Agent: main (Z.ai)
+Task: Project Duck V0.8 — fantasy adventure, advanced level design & swing challenges
+
+Work Log:
+- Step A audit FIRST (per spec): confirmed the V0.7 baseline real (commit e9202fa); ran scripts/game-tests-v6.js in the live page — 9/9 scenarios PASS (L1 full 5/5 stars, L2 mid-air chain, L3 movers + full route, cross-level clean, reset loop); baseline screenshots captured; all 11 engine files re-read and mapped
+- Step B stabilize: no critical regressions found; physics constants deliberately untouched (all existing reachability depends on them)
+- Step C/D — Region D "Cloud Garden" (L4, ~100u, garden theme): 9 platforms, 1 mover, 6 swings, 3 checkpoints, 10 stars; designed against the measured envelopes (run-jump 3.1u/2.0u, swing release 4–8u @ omega 2.6–3.4); NEW mechanics: walk-on lily ferry (pad top 0.02u above P3 → corner-forgiveness walk-on, no jump timing), S3→S4 AND S5→S6 mid-air chains (S6 raised/shortened so its seat sits on the S5 flight line), expert shortcut isle (early max-pump S5 release, skips S6, verified via a 3-window release sweep), 2 suspended ring gates framing the real flight paths
+- Hazards (first in the game): thorn burr builder in LevelKit (plum spiky ball + spikes + pulsing ground danger ring + bob/spin anims, forgiving r=0.62 hitbox); L3 slab-side isle + L4 wide garden placements; Game.checkHazards() → prick sfx + burst + respawn(true); hazardX/hazardD added to the debug state; lowered the L3 burr (y 1.08→0.72, travel 1.0→0.7) after proving its original danger zone (2.64u) was wider than any jump arc (2.07u) — unhopppable by geometry
+- Step E — art direction: garden theme (mint caps on lavender cloud-rock, violet outlines), 4 Background palettes (garden = dusk-magic lavender→rose, pink cloud sea, 18 cloud rows), new decor: ringGate (torus + orbiting gems), puffPlant (glowing flora), ropeBridge (InstancedMesh planks + 2 tube rails, 5 draw calls); region identity in GameCanvas (colored overlines on intro card + picker rows, region dot on the chip); L3 got a background rope bridge
+- Step F — progression: save v2 unchanged and verified forward-compatible (4-level unlock, per-region best stars/time, replay never duplicates rewards); picker/intro cards show the four regions
+- Fixed real game bugs found by testing: (1) moving-platform VISUALS floated 0.33u under the duck since V0.6 (cap center vs collision top) — kit now aligns them; (2) L4 S1 climb wall-clip (release trajectory hit the garden's left wall face, vx zeroed mid-air — trajectory-traced) → platform lowered to 1.0u, all honest releases clear; (3) ferry boarding fragility → walk-on redesign; (4) burr-vs-pad overlap → pad travel retuned
+- Step G — playtest: built scripts/game-tests-v8.js (L4 part1/full/hazard/checkpoint/shortcut + crossLevel4; l4_full = part1 + a 23-phase state machine covering burr hop → ferry → chain → double-vine finale → flag, bounded 200-step slices like l3_drive). Long debug loop: instrumented release states, traced flights step-by-step, found and fixed the S2-momentum-carry (hop flight 3.1u vs 6.8u unpredictable → decay sub-state), ferry walk-offs (stop-and-wait + extreme-phase triggers + run-up momentum checks + genuine on-slab verification with retry), vertical hop-off jumps (vx ≥ 4.0 gates), and the L3 walk through the new burr (relative-distance hop trigger)
+- FINAL RESULT: two consecutive full-suite runs ALL GREEN (14/14): L1 full 5/5, L2 full + chain, L3 movers/checkpoint/full (won incl. burr hop), L4 part1/full (won 6/10, BOTH mid-air chains true)/hazard (safe stand + prick→CP1 respawn)/checkpoint/shortcut (isle reached), crossLevel4 pristine, reset loop clean
+- Visual QA: garden start/burr isle/ferry+ring/finale/grand garden/canyon burr+rope bridge/region picker/mobile 390×844 screenshots (download/screens/v8/); multi-touch run+jump verified; console clean on fresh reload; ESLint clean; L4 budget 104 draw calls / 23.4k tris (+10 vs V0.7)
+
+Stage Summary:
+- Deliverable: V0.8 at / — four connected fantasy regions (Enchanted Meadow / Floating Islands / Crystal Canyon / Cloud Garden) on one difficulty curve, first hazards, expert shortcut, ring-gate landmarks, region identity UI, honest 14-scenario green suite
+- Key decisions: physics constants untouched (reachability preserved); walk-on ferry over jump-timing boarding; relative-distance burr hop; L3 burr redesigned after a reachability proof; quality over quantity (wind gusts + 4th hazard type scoped out)
+- Artifacts: download/screens/v8/ (8 shots), scripts/game-tests-v8.js, README V0.8, worklog (this entry)
+- Not done (honest): Android device testing / real-GPU fps (no device in sandbox); human playtesting; music

@@ -11,7 +11,8 @@
  * they never share a color or silhouette with the scenery behind them.
  *
  * Each level applies its own palette (applyTheme) without touching layer
- * structure: meadow = sunny greens, isles = airy mints, canyon = warm dusk.
+ * structure: meadow = sunny greens, isles = airy mints, canyon = warm dusk,
+ * garden = dusk-magic lavender over a pink cloud sea.
  */
 
 import * as THREE from 'three'
@@ -21,7 +22,7 @@ interface Cloud {
   speed: number
 }
 
-export type BgTheme = 'meadow' | 'isles' | 'canyon'
+export type BgTheme = 'meadow' | 'isles' | 'canyon' | 'garden'
 
 interface BgPalette {
   sky: [string, string, string, string]
@@ -76,6 +77,23 @@ const PALETTES: Record<BgTheme, BgPalette> = {
     cloudSeaColor: [0xfff2dd, 0xf7e3c8],
     cloudTint: 0xfff6e4,
     cloudRows: 7,
+  },
+  // Region D — dusk-magic: lavender sky melting into rose, thick soft
+  // cloud sea below, pale violet hill rings. Platforms stay saturated
+  // mint with dark violet outlines so the white duck always pops.
+  garden: {
+    sky: ['#b9a4ea', '#dcc2f2', '#f6d4ec', '#fde4ee'],
+    fog: 0xf0d4ec,
+    sun: 0xfff0f6,
+    sunY: 9.4,
+    rings: [
+      { color: 0xf0e4f6, y: -4.6, z: -26, spread: 16, r: 12, sy: 0.3, n: 11 },
+      { color: 0xdcc8ee, y: -3.6, z: -19, spread: 15.5, r: 10, sy: 0.32, n: 11 },
+      { color: 0xc2aae2, y: -3.2, z: -12.5, spread: 15, r: 6.5, sy: 0.38, n: 10 },
+    ],
+    cloudSeaColor: [0xfff4fa, 0xf6e2f4],
+    cloudTint: 0xfffafc,
+    cloudRows: 18,
   },
 }
 

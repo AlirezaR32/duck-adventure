@@ -71,6 +71,14 @@ function fmtTime(t: number): string {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+/** Per-region accent (intro cards, picker overlines, current-region dot). */
+const REGION_ACCENT: Record<string, { text: string; dot: string }> = {
+  meadow: { text: 'text-emerald-500', dot: 'bg-emerald-400' },
+  isles: { text: 'text-teal-500', dot: 'bg-teal-400' },
+  canyon: { text: 'text-orange-400', dot: 'bg-orange-400' },
+  garden: { text: 'text-violet-400', dot: 'bg-violet-400' },
+}
+
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [game, setGame] = useState<Game | null>(null)
@@ -178,6 +186,7 @@ export default function GameCanvas() {
   const def = LEVELS[levelIdx]
   const record = save.best[def.id] ?? emptyRecord()
   const isLastLevel = levelIdx >= LEVELS.length - 1
+  const accent = REGION_ACCENT[def.theme] ?? REGION_ACCENT.meadow
 
   const goTo = (i: number) => {
     setPickerOpen(false)
@@ -219,7 +228,8 @@ export default function GameCanvas() {
         onClick={() => setPickerOpen((v) => !v)}
         className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-white/85 px-3.5 py-1.5 shadow-md shadow-stone-900/5 transition active:scale-95"
       >
-        <span className="text-xs font-extrabold tracking-wide text-stone-600">
+        <span className="flex items-center gap-1.5 text-xs font-extrabold tracking-wide text-stone-600">
+          <span className={`h-2 w-2 rounded-full ${accent.dot}`} aria-hidden />
           {levelIdx + 1}/{LEVELS.length} · {def.name}
         </span>
       </button>
@@ -289,6 +299,9 @@ export default function GameCanvas() {
                         </span>
                       )}
                       <div>
+                        <div className={`text-[9px] font-extrabold uppercase tracking-widest ${REGION_ACCENT[d.theme]?.text ?? 'text-stone-400'}`}>
+                          {d.region}
+                        </div>
                         <div className="text-sm font-extrabold text-stone-700">{d.name}</div>
                         <div className="text-[11px] font-semibold text-stone-400">{d.subtitle}</div>
                       </div>
@@ -352,8 +365,8 @@ export default function GameCanvas() {
         className={`pointer-events-none absolute inset-x-0 top-16 flex justify-center transition-opacity duration-700 ${intro && !pickerOpen ? 'opacity-100' : 'opacity-0'}`}
       >
         <div className="flex flex-col items-center gap-1 rounded-3xl bg-white/85 px-6 py-3 text-center shadow-lg shadow-stone-900/5">
-          <div className="text-[11px] font-extrabold uppercase tracking-widest text-orange-400">
-            Level {levelIdx + 1} of {LEVELS.length}
+          <div className={`text-[11px] font-extrabold uppercase tracking-widest ${accent.text}`}>
+            {def.region}
           </div>
           <div className="text-base font-extrabold text-stone-700">{def.name}</div>
           <div className="text-xs font-semibold text-stone-500">{def.hint}</div>

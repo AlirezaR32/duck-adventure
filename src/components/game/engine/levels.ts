@@ -1,13 +1,14 @@
 /**
- * Project Duck V0.6 — level definitions (pure data + decor placement).
+ * Project Duck V0.6/V0.8 — level definitions (pure data + decor placement).
  *
- * Three short, complete levels demonstrating the swing core:
- *   1  Meadow Swing     — teach run / jump / grab / pump / release
- *   2  Floating Isles   — reward momentum, higher+lower routes, a mid-air
- *                         chain pair, optional stars on the brave line
- *   3  Crystal Canyon   — demanding: moving stone slabs, narrow fair
- *                         landings, a checkpoint right before the hardest
- *                         climb + grand finale
+ * V0.8 — four connected fantasy regions on one difficulty curve:
+ *   A  Enchanted Meadow  — teach run / jump / grab / pump / release
+ *   B  Floating Islands  — reward momentum, mid-air chain pair, brave line
+ *   C  Crystal Canyon    — demanding: stone slabs, narrow fair landings,
+ *                          the first thorn burr, checkpoint before the climb
+ *   D  Cloud Garden      — the sky finale: ferry ride, chain zone, the
+ *                          double-vine grand finale + an optional high
+ *                          shortcut isle for skilled players
  *
  * Reachability rules used while placing geometry (measured, not guessed):
  *   run-jump range  ≈ 3.1u flat, rise ≈ 2.0u
@@ -26,11 +27,16 @@ import {
   Kit,
   lantern,
   mushroom,
+  puffPlant,
+  ringGate,
   rock,
+  ropeBridge,
   startSign,
   tree,
   waterfall,
 } from './LevelKit'
+
+import type { HazardDef } from './LevelKit'
 
 export interface PlatDef {
   x1: number
@@ -57,7 +63,9 @@ export interface LevelDef {
   subtitle: string
   /** One-line hint shown on the level intro card (teach by design, not walls of text). */
   hint: string
-  theme: 'meadow' | 'isles' | 'canyon'
+  /** Fantasy region identity (intro card + level picker). */
+  region: string
+  theme: 'meadow' | 'isles' | 'canyon' | 'garden'
   spawnX: number
   flagX: number
   killY: number
@@ -67,6 +75,7 @@ export interface LevelDef {
   swings: SwingCfg[]
   checkpoints: CheckpointDef[]
   stars: { x: number; y: number }[]
+  hazards?: HazardDef[]
   buildDecor: (kit: Kit) => void
 }
 
@@ -77,6 +86,7 @@ const L1: LevelDef = {
   name: 'Meadow Swing',
   subtitle: 'Learn the ropes',
   hint: 'Run with the arrows, JUMP the gap, then GRAB the swing!',
+  region: 'Region A — Enchanted Meadow',
   theme: 'meadow',
   spawnX: 0.4,
   flagX: 34.6,
@@ -129,6 +139,7 @@ const L2: LevelDef = {
   name: 'Floating Isles',
   subtitle: 'Keep your speed',
   hint: 'Release at the top of the arc — momentum carries you across.',
+  region: 'Region B — Floating Islands',
   theme: 'isles',
   spawnX: 0.4,
   flagX: 64.6,
@@ -207,6 +218,7 @@ const L3: LevelDef = {
   name: 'Crystal Canyon',
   subtitle: 'The final traversal',
   hint: 'Ride the stone slabs — the checkpoint waits before the big climb.',
+  region: 'Region C — Crystal Canyon',
   theme: 'canyon',
   spawnX: 0.4,
   flagX: 71.0,
@@ -214,7 +226,7 @@ const L3: LevelDef = {
   platforms: [
     { x1: -3.2, x2: 6.6, top: 0 }, // start ledge
     { x1: 12.8, x2: 17.2, top: 1.0 }, // narrow but fair
-    { x1: 24.2, x2: 31.4, top: 0.5 }, // slab-side isle
+    { x1: 24.2, x2: 31.4, top: 0.5 }, // slab-side isle (burr patrols the middle)
     { x1: 36.6, x2: 40.2, top: -0.8 }, // deep canyon ledge
     { x1: 46.4, x2: 51.8, top: 1.6 }, // checkpoint isle (hardest section starts after)
     { x1: 57.6, x2: 61.6, top: 3.0 }, // crystal spire
@@ -252,6 +264,12 @@ const L3: LevelDef = {
     { x: 56.4, y: 4.6 }, // top of the elevator ride
     { x: 63.4, y: 6.4 }, // finale arc
   ],
+  // first real hazard: a slow thorn burr resting on the slab-side isle.
+  // The ferry lands around x≈27, the burr sweeps 28.2–29.6 — hop it (the
+  // run-up jump clears its 1.34u top comfortably) or walk past while it
+  // drifts left. A prick sends you to the checkpoint on the narrow ledge,
+  // one ferry ride back.
+  hazards: [{ x: 28.9, y: 0.72, travel: 0.7, speed: 0.55, phase: 0.5, ringY: 0.52 }],
   buildDecor(kit) {
     startSign(kit, 1.6, 0)
     tree(kit, 2.8, -5.2, 0.95)
@@ -282,6 +300,8 @@ const L3: LevelDef = {
     lantern(kit, 60.6, 3.0, -0.8, 1.0)
     crystal(kit, 60.4, 1.2, -12, 4.0)
     crystal(kit, 67.6, -0.4, -10, 3.4, kit.theme.crystalGold)
+    // background suspension bridge — the canyon's old crossing, still intact
+    ropeBridge(kit, 25.4, 1.9, 33.0, 1.5)
     // grand landing garden
     tree(kit, 68.6, -5.4, 1.0)
     bush(kit, 70.0, 0.3, -1.05, 0.95)
@@ -290,4 +310,122 @@ const L3: LevelDef = {
   },
 }
 
-export const LEVELS: LevelDef[] = [L1, L2, L3]
+// ============================ Level 4 — Cloud Garden (Region D) ============================
+
+const L4: LevelDef = {
+  id: 'garden',
+  name: 'Cloud Garden',
+  subtitle: 'The sky finale',
+  hint: 'Chain the hanging vines — the garden floats past the rings.',
+  region: 'Region D — Cloud Garden',
+  theme: 'garden',
+  spawnX: 0.4,
+  flagX: 97.4,
+  killY: -8,
+  platforms: [
+    { x1: -3.4, x2: 6.8, top: 0 }, // cloud garden start
+    { x1: 9.2, x2: 12.4, top: 0.5 }, // teaching hop
+    { x1: 17.9, x2: 26.9, top: 1.0 }, // high garden (S1 climb reward, CP1)
+    { x1: 33.0, x2: 41.6, top: 0.1 }, // wide garden (burr patrols the right half)
+    { x1: 50.6, x2: 54.6, top: 0.9 }, // ferry landing (CP2)
+    { x1: 60.4, x2: 64.4, top: -0.3 }, // safe catch isle under the chain zone
+    { x1: 69.4, x2: 77.7, top: 1.3 }, // wide garden (CP3, S5 launch edge)
+    { x1: 83.0, x2: 85.2, top: 4.5 }, // OPTIONAL shortcut isle (early max-pump S5 release, skips S6)
+    { x1: 88.2, x2: 98.6, top: 0.6 }, // grand garden + flag
+  ],
+  movers: [
+    // M1: lily-pad ferry across the cloud gap (P3 → P4). Its top sits
+    // 0.02 above P3 so the duck WALKS straight on when the pad overlaps
+    // the platform edge at its left extreme — no jump-timing needed —
+    // and rides it right through the ring gate. Falling is a soft
+    // recovery back to CP1.
+    { cx: 45.0, top: 0.12, w: 3.0, motion: { axis: 'x', amp: 3.0, speed: 0.8, phase: 0 } },
+  ],
+  pedestals: [{ x: 15.4, top: -0.3 }],
+  swings: [
+    // S1 pedestal swing up to the high garden
+    { x: 15.4, type: 'frame', baseY: -0.3, L: 3.2, pivotH: 4.1, range: 2.3 },
+    // S2 long hanging vine over the cloud gap
+    { x: 27.4, type: 'hanging', pivotY: 7.4, L: 4.8, range: 2.4 },
+    // S3 pedestal swing — release hard and CHAIN mid-air onto S4…
+    { x: 57.4, type: 'frame', baseY: -0.4, L: 3.3, pivotH: 4.2, range: 2.3 },
+    // …or land on the catch isle and grab S4 from its edge (safe route)
+    { x: 65.4, type: 'hanging', pivotY: 7.0, L: 4.6, range: 2.4 },
+    // S5 finale vine 1 — pump hard…
+    { x: 78.2, type: 'hanging', pivotY: 7.8, L: 4.9, range: 2.4 },
+    // S6 finale gate swing — short ropes put its seat right on the S5
+    // flight line: release S5 at mid-arc and CHAIN mid-air onto S6, then
+    // send it through the ring gate to the grand garden
+    { x: 86.0, type: 'hanging', pivotY: 7.5, L: 3.2, range: 2.4 },
+  ],
+  checkpoints: [
+    { x: 21.8, y: 1.0, plat: 2 },
+    { x: 52.6, y: 0.9, plat: 4 },
+    { x: 72.5, y: 1.3, plat: 6 },
+  ],
+  stars: [
+    { x: 8.4, y: 2.5 }, // apex of the teaching hop
+    { x: 19.9, y: 3.3 }, // S1 climb arc
+    { x: 21.5, y: 3.2 }, // S1 arc, second gate
+    { x: 30.2, y: 3.6 }, // S2 arc
+    { x: 44.4, y: 2.2 }, // inside the ferry ring — hop during the ride!
+    { x: 62.4, y: 2.8 }, // mid-air chain zone
+    { x: 67.4, y: 3.4 }, // S4 arc
+    { x: 83.8, y: 5.3 }, // shortcut isle (expert only)
+    { x: 84.7, y: 5.3 }, // shortcut isle (expert only)
+    { x: 90.0, y: 4.4 }, // grand finale arc
+  ],
+  hazards: [
+    // second burr, on the wide garden after the long vine. The vine drops
+    // you around x 34–37; the burr sweeps 37.8–39.4 — hop it or walk past
+    // while it drifts left, then board the ferry at the right edge.
+    { x: 38.6, y: 0.68, travel: 0.6, speed: 0.6, phase: 0 },
+  ],
+  buildDecor(kit) {
+    startSign(kit, 1.7, 0)
+    tree(kit, 3.2, -5.2, 1.0)
+    puffPlant(kit, 4.9, 0, -1.1, 1.0)
+    bush(kit, 5.8, 0, -1.05, 0.9)
+    mushroom(kit, 2.3, 0, -0.95, 0.85)
+    // teaching hop
+    puffPlant(kit, 10.6, 0.5, -1.0, 0.85)
+    // high garden (S1 reward)
+    bigFlower(kit, 20.1, 1.0, -1.15, 1.1, kit.theme.leafPink)
+    puffPlant(kit, 22.9, 1.0, -0.95, 0.9)
+    lantern(kit, 24.6, 1.0, -0.8, 1.0)
+    tree(kit, 19.6, -5.0, 1.05, true)
+    // wide garden + burr zone
+    crystal(kit, 34.2, 0.1, -1.15, 0.9, kit.theme.crystal)
+    bush(kit, 35.6, 0.1, -1.0, 0.9)
+    lantern(kit, 33.9, 0.1, -0.75, 0.9)
+    // ferry crossing through the first ring gate
+    ringGate(kit, 44.4, 3.3, 1.75)
+    floatingRock(kit, 46.2, 4.8, -8.5, 0.9)
+    floatingRock(kit, 40.8, 5.6, -10.5, 1.2)
+    // ferry landing (CP2)
+    puffPlant(kit, 51.6, 0.9, -1.05, 0.9)
+    mushroom(kit, 53.4, 0.9, -0.95, 0.8)
+    // chain zone
+    crystal(kit, 61.4, -0.3, -1.15, 1.0, kit.theme.crystalGold)
+    floatingRock(kit, 63.0, 3.8, -7.5, 0.85)
+    // wide garden before the finale
+    bigFlower(kit, 70.6, 1.3, -1.15, 1.05, kit.theme.leafPinkLight)
+    tree(kit, 74.4, -5.4, 1.1)
+    puffPlant(kit, 76.2, 1.3, -1.0, 0.85)
+    // grand finale: the double-vine arc threads the second ring gate
+    ringGate(kit, 91.2, 5.3, 1.6)
+    floatingRock(kit, 85.6, 6.6, -9.5, 1.1)
+    floatingRock(kit, 88.6, 5.6, -11, 0.9)
+    // background suspension bridge between the high gardens
+    ropeBridge(kit, 70.2, 2.7, 77.2, 2.5)
+    // grand garden celebration
+    bigFlower(kit, 91.0, 0.6, -1.2, 1.15, kit.theme.leafPink)
+    bigFlower(kit, 96.6, 0.6, -1.35, 0.95, kit.theme.flowerC)
+    puffPlant(kit, 93.6, 0.6, -0.95, 1.0)
+    tree(kit, 90.6, -5.4, 1.05, true)
+    lantern(kit, 95.2, 0.6, -0.75, 1.05)
+    crystal(kit, 97.8, 0.6, -1.1, 1.15, kit.theme.crystal)
+  },
+}
+
+export const LEVELS: LevelDef[] = [L1, L2, L3, L4]

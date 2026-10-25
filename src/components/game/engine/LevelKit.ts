@@ -1,11 +1,15 @@
 /**
- * Project Duck V0.6 — reusable level component kit.
+ * Project Duck V0.6/V0.8 — reusable level component kit.
  *
  * Every playable object (island, pedestal, mover, checkpoint post, star,
  * flag, arch, sign) and every decor piece (tree, bush, flower, mushroom,
  * crystal, rock, lantern, waterfall, floating rock) is built by a small
  * function operating on a theme palette, so a new level is just data plus
  * a decor placement function.
+ *
+ * V0.8 adds the cloud-garden theme, fantasy landmarks (suspended ring
+ * gates, glowing puff plants, background rope bridges) and the first
+ * real hazard: the thorn burr — a slow, loud, forgiving patroller.
  *
  * Play geometry always collides; decor never does. Everything a level
  * builds lives under one root group so a level can be unloaded cleanly.
@@ -18,7 +22,7 @@ import { roundedBoxGeo } from './Swing'
 // ============================ themes ============================
 
 export interface LevelTheme {
-  name: 'meadow' | 'isles' | 'canyon'
+  name: 'meadow' | 'isles' | 'canyon' | 'garden'
   grassTop: number
   grassRim: number
   grassSide: number
@@ -122,6 +126,35 @@ export const THEMES: Record<LevelTheme['name'], LevelTheme> = {
     flowerC: 0xff7a70,
     mushroomCap: 0xe87a6a,
     vine: 0x8aa058,
+  },
+  // Region D — Cloud Garden: mint grass caps on lavender cloud-rock,
+  // glowing pink/violet flora. Platforms stay saturated with dark
+  // violet outlines so the white duck never blends into the pastels.
+  garden: {
+    name: 'garden',
+    grassTop: 0xb2eed2,
+    grassRim: 0xdcfce8,
+    grassSide: 0x82d4b0,
+    dirt: 0xcfc4ec,
+    dirtDeep: 0xb2a5da,
+    outline: 0x5c4a78,
+    tuft: 0x74c8a4,
+    wood: 0xa8845e,
+    woodLight: 0xf0dcbc,
+    leaf: 0x8fd8b8,
+    leafLight: 0xbdf0d4,
+    leafDeep: 0x64b890,
+    leafPink: 0xf5b8e0,
+    leafPinkLight: 0xffd8f0,
+    crystal: 0xe8a8f0,
+    crystalGold: 0xffd166,
+    rockA: 0xd8d0f0,
+    rockB: 0xc4e8de,
+    flowerA: 0xfff2fa,
+    flowerB: 0xff9ed8,
+    flowerC: 0xc0a2ff,
+    mushroomCap: 0xe89ac8,
+    vine: 0x8fc4a8,
   },
 }
 
@@ -316,10 +349,13 @@ export function movingPlatform(kit: Kit, cx: number, top: number, w: number, mot
 
   const H = 1.15
   const box = world.addMoving(cx, top - H / 2, w, H, motion)
-  g.position.set(cx, top - H / 2, 0)
+  // align the VISUAL cap top with the collision top (the cap is 0.5 thick,
+  // the collision body 1.15 — without this offset the duck would hover)
+  const yOff = (H - h) / 2
+  g.position.set(cx, top - H / 2 + yOff, 0)
   kit.anims.push(() => {
     g.position.x = box.cx
-    g.position.y = box.cy
+    g.position.y = box.cy + yOff
   })
   return { box, group: g }
 }
@@ -652,6 +688,195 @@ export function waterfall(kit: Kit, x: number, y: number): void {
       if (drops[i].position.y < y - 3.4) drops[i].position.y = y - 0.2
     }
   })
+}
+
+// ============================ V0.8 — hazards & fantasy landmarks ============================
+
+/** Slow patrolling hazard: hover center (x, y), sinus patrol and speed. */
+export interface HazardDef {
+  x: number
+  y: number
+  travel: number
+  speed: number
+  phase?: number
+  /** Ground-ring height override (defaults to y − 0.58). */
+  ringY?: number
+}
+
+export interface HazardRT {
+  def: HazardDef
+  group: THREE.Group
+  /** Collision radius (forgiving: slightly smaller than the visuals). */
+  r: number
+}
+
+/**
+ * Thorn burr — the game's first real hazard. Slow, loud, impossible to
+ * misread: deep plum spiky ball, pulsing danger ring projected on the
+ * ground below it, gentle bob. Always placed on a wide platform with room
+ * to run past or jump over, always after a recent checkpoint.
+ */
+export function thornBurr(kit: Kit, def: HazardDef): HazardRT {
+  const { root } = kit
+  const g = new THREE.Group()
+
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x7a3b5e,
+    emissive: 0x40182e,
+    emissiveIntensity: 0.55,
+    roughness: 0.5,
+    metalness: 0,
+    flatShading: true,
+  })
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 1), coreMat)
+  g.add(core)
+
+  const spikeGeo = new THREE.ConeGeometry(0.085, 0.32, 5)
+  const spikeMat = flatMat(0x93507a)
+  const dirs: [number, number, number][] = []
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2
+    dirs.push([Math.cos(a), 0, Math.sin(a)])
+  }
+  dirs.push([0, 1, 0.2], [0.7, 0.75, -0.3], [-0.7, 0.75, 0.3])
+  dirs.push([0, -1, 0.2], [0.7, -0.75, -0.3], [-0.7, -0.75, 0.3])
+  for (const [dx, dy, dz] of dirs) {
+    const s = new THREE.Mesh(spikeGeo, spikeMat)
+    s.position.set(dx * 0.28, dy * 0.28, dz * 0.28)
+    s.quaternion.setFromUnitVectors(UP, new THREE.Vector3(dx, dy, dz).normalize())
+    s.castShadow = true
+    g.add(s)
+  }
+
+  // danger ring projected on the ground under the burr — the honest
+  // "this zone is unsafe" marker, pulsing so it reads at a glance
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xe05078, transparent: true, opacity: 0.35, fog: false })
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.74, 26), ringMat)
+  ring.rotation.x = -Math.PI / 2
+  const ringY = def.ringY ?? def.y - 0.58 // platform surface right under the hover center
+  ring.position.set(def.x, ringY, 0)
+  root.add(ring)
+
+  root.add(g)
+  const phase = def.phase ?? 0
+  kit.anims.push((t) => {
+    const cx = def.x + Math.sin(t * def.speed + phase) * def.travel
+    g.position.set(cx, def.y + Math.sin(t * 1.7 + phase) * 0.05, 0)
+    g.rotation.y = t * 0.9
+    core.rotation.x = t * 1.35
+    ring.position.x = cx
+    ringMat.opacity = 0.3 + Math.sin(t * 4.2 + phase) * 0.14
+  })
+
+  return { def, group: g, r: 0.62 }
+}
+
+const UP = new THREE.Vector3(0, 1, 0)
+
+/**
+ * Giant suspended ring — a magical flight-path landmark. Purely decor:
+ * it frames the arcs the duck actually flies (ferry rides, vine chains),
+ * teaching the route without a single word of UI.
+ */
+export function ringGate(kit: Kit, x: number, y: number, r: number): void {
+  const { root, theme } = kit
+  const mat = new THREE.MeshStandardMaterial({
+    color: theme.leafPinkLight,
+    emissive: theme.leafPink,
+    emissiveIntensity: 0.5,
+    roughness: 0.45,
+    metalness: 0,
+  })
+  const torus = new THREE.Mesh(new THREE.TorusGeometry(r, 0.09, 10, 44), mat)
+  torus.position.set(x, y, 0)
+  root.add(torus)
+  const gemGeo = new THREE.OctahedronGeometry(0.09, 0)
+  const gems: THREE.Mesh[] = []
+  for (let i = 0; i < 3; i++) {
+    const gem = new THREE.Mesh(gemGeo, glowMat(theme.crystal, 0.8))
+    root.add(gem)
+    gems.push(gem)
+  }
+  kit.anims.push((t) => {
+    torus.rotation.z = t * 0.18
+    for (let i = 0; i < gems.length; i++) {
+      const a = t * 0.5 + (i / gems.length) * Math.PI * 2
+      gems[i].position.set(x + Math.cos(a) * (r + 0.32), y + Math.sin(a) * (r + 0.32), 0.25)
+    }
+  })
+}
+
+/** Glowing puff plant — unusual cloud-garden flora (decor only). */
+export function puffPlant(kit: Kit, x: number, y: number, z: number, s: number): void {
+  const { root, theme, rand } = kit
+  const g = new THREE.Group()
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025 * s, 0.035 * s, 0.5 * s, 6), flatMat(theme.leafDeep))
+  stem.position.y = 0.25 * s
+  g.add(stem)
+  const puffMat = new THREE.MeshStandardMaterial({
+    color: 0xfff4fb,
+    emissive: theme.leafPink,
+    emissiveIntensity: 0.35,
+    roughness: 0.6,
+    metalness: 0,
+  })
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + rand() * 0.5
+    const p = new THREE.Mesh(new THREE.SphereGeometry((0.09 + rand() * 0.05) * s, 8, 7), puffMat)
+    p.position.set(Math.cos(a) * 0.12 * s, 0.55 * s + Math.sin(a) * 0.07 * s, Math.sin(a) * 0.1 * s)
+    g.add(p)
+  }
+  g.position.set(x, y, z)
+  root.add(g)
+  const ph = rand() * 6.28
+  kit.anims.push((t) => {
+    puffMat.emissiveIntensity = 0.3 + Math.sin(t * 1.6 + ph) * 0.16
+    g.rotation.z = Math.sin(t * 0.8 + ph) * 0.05
+  })
+}
+
+/**
+ * Decorative suspension bridge far behind the play plane (never collides).
+ * Planks are one InstancedMesh, rails are two tube curves: 5 draw calls.
+ */
+export function ropeBridge(kit: Kit, x1: number, y1: number, x2: number, y2: number): void {
+  const { root, theme } = kit
+  const z = -1.5
+  const sag = 0.55
+  const span = Math.abs(x2 - x1)
+  const n = Math.max(6, Math.round(span / 0.6))
+  const plankMat = flatMat(theme.wood)
+  const plankGeo = roundedBoxGeo(0.4, 0.07, 0.85, 0.03)
+  const planks = new THREE.InstancedMesh(plankGeo, plankMat, n)
+  const m4 = new THREE.Matrix4()
+  const pts: THREE.Vector3[] = []
+  for (let i = 0; i < n; i++) {
+    const f = (i + 0.5) / n
+    const x = x1 + (x2 - x1) * f
+    const y = y1 + (y2 - y1) * f - Math.sin(f * Math.PI) * sag
+    m4.makeTranslation(x, y, z)
+    planks.setMatrixAt(i, m4)
+  }
+  planks.instanceMatrix.needsUpdate = true
+  root.add(planks)
+  for (let i = 0; i <= 8; i++) {
+    const f = i / 8
+    pts.push(new THREE.Vector3(x1 + (x2 - x1) * f, y1 + (y2 - y1) * f - Math.sin(f * Math.PI) * sag + 0.36 - Math.sin(f * Math.PI) * 0.1, 0))
+  }
+  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.85 })
+  for (const dz of [-0.44, 0.44]) {
+    const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p.x, p.y, z + dz)))
+    const rail = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.024, 5, false), ropeMat)
+    root.add(rail)
+  }
+  for (const [px, py] of [
+    [x1, y1],
+    [x2, y2],
+  ]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.0, 7), plankMat)
+    post.position.set(px, py + 0.42, z)
+    root.add(post)
+  }
 }
 
 /** Small floating rock island drifting in the background (gently bobs). */
