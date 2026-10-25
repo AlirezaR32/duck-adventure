@@ -46,3 +46,29 @@ Stage Summary:
 - Deliverable: swing-first V0.2 at / — run/jump are supporting moves, the two-swing rhythm (grab/pump/release/fly/land) is the core loop, both crossings + flag verified end-to-end
 - Key fixes: landing-event eating (physics), swing freeze after release, ledge-corner jams, hills swallowing platforms (layered depth + outlines + color separation)
 - Artifacts: download/screens/v2-*.png (14 verification shots), download/duck.glb, README.md V0.2
+
+---
+Task ID: 3
+Agent: main (Z.ai)
+Task: Project Duck V0.4 — swing chain system, continuous route, checkpoints/collectibles, polish
+
+Work Log:
+- Inspected V0.2 code (8 engine modules) + screenshots; mapped V0.4 spec onto the codebase
+- Level.ts rebuilt as one continuous route (~110u, 12 islands + 2 collision pedestals + bonus island, 9 swings: 6 A-frames, 2 hanging vine swings with lantern beams, 1 finale), sections A-E per spec
+- Added explicit checkpoint system: 9 crystal posts (gold when active), activation by platform landing (posts can be overflown), respawn keeps stars, clears swing attachments/input
+- Added 13 collectible stars along verified swing arcs, HUD counter + localStorage {completed, bestStars} persistence (duck-save-v1)
+- Swing.ts: frame/hanging types, per-swing grab range + settle damping, maxV tangential cap (11.5 m/s, kills rocket launches on long ropes), inelastic ±1.38 rad stops, held-state rope/seat glow
+- Game.ts: re-grab cooldown 0.24s (released swing only), ahead-bias grab selection, confetti bursts (star/checkpoint/win), whoosh + footstep + chime + collect sfx wiring, camera velocity-smoothed look-ahead, completion stats callback, debug hook + deterministic sim(n) stepper
+- Duck.ts: jump anticipation (compress-rebound), checkpoint celebration, respawn dizzy wobble
+- GameCanvas.tsx: star HUD + BEST badge, quick-retry button (respawn at checkpoint), checkpoint/star toasts, completion screen with stats + PLAY AGAIN
+- Background extended for 110u; README rewritten to V0.4
+- BUGS FOUND & FIXED via deterministic testing: (1) released swings never settled — settle() was only called while attached, swings spun at cap forever, seats never returned to grab range; (2) angular stop rattle/deadlock at ±1.38; (3) unbounded pump on long ropes = 20 m/s rockets; (4) behind-the-back accidental grabs (ahead-bias added); (5) checkpoint posts overflown by flights (per-platform activation)
+- Tuned reachability by trajectory math + sim: S2 taller frame + P3 0.4 closer; S5 repositioned 51.8→50.0→49.0 + P6 widened (any release lands); P9 raised to 2.0 so S7 sends land/bonus island catches; P9b catches strong S8 sends; all 13 stars placed on verified arcs
+- Verified ALL 10 required scenarios via scripts/game-tests.js (window.__T.all()) + real pointer touch tests: warmup, same-swing regrab x3, MID-AIR S4→S5 chain, miss+recover, checkpoint respawn, full 9-swing route to flag (won, 13/13 stars, cp 8), stars, PLAY AGAIN reset, touch-only JUMP/RUN at 390x844, high-speed flight camera
+- Screenshots v4-01..v4-26 (idle, flight, checkpoint toast, garden, crystals+gold cp, finish arch+completion, mid-swing, mobile portrait)
+
+Stage Summary:
+- Deliverable: V0.4 at / — 9-swing chain route with checkpoints, stars, completion screen, all required tests passing deterministically
+- Key fixes: swing settle bug, omega caps, inelastic stops, ahead-bias grabs, platform-based checkpoints
+- Artifacts: download/screens/v4-*.png (12 shots), scripts/game-tests.js (reusable harness), README.md V0.4
+- Not done (honest): Android device testing/perf profiling (no device in sandbox); music; P9b is expert-only

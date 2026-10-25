@@ -1,11 +1,11 @@
-# Project Duck — V0.2
+# Project Duck — V0.4
 
-A charming **swing-first 2.5D physics platformer** starring a smooth, collectible-toy white
+A charming, **swing-chain 2.5D fantasy platformer** starring a smooth, collectible-toy white
 duck, built for mobile (Android-first) play in the browser. The duck matches the supplied
 ornament reference: long elegant neck, softly rounded head, big friendly orange beak, glossy
 bead eyes with catchlight, tiny folded wings and small orange webbed feet.
 
-![screenshots](download/screens/v2-19-final-idle.png)
+![screenshots](download/screens/v4-26-swinging.png)
 
 ## Engine
 
@@ -22,73 +22,98 @@ bun run dev        # dev server (the sandbox runs this automatically on port 300
 ```
 
 Desktop keyboard works for development: **← → / A D** run · **Space / ↑ / W** jump ·
-**E / Enter** grab & let go · **R** restart.
+**E / Enter** grab & let go · **R** quick retry (respawn at checkpoint).
 
-## The loop (swing-first)
+Touch: ← → buttons bottom-left · big **JUMP** bottom-right · contextual **GRAB / LET GO**
+button appears near swings. All buttons use per-pointer capture so run + jump + grab
+multi-touch combinations work.
 
-**Run → Jump → Grab → Swing → Release → Fly → Land → Repeat.**
+## The loop (swing chain)
 
-The level is built around two playground swings:
+**Run → Jump → Grab → Pump → Release → Fly → Land → Run → Grab the next swing.**
 
-start platform → **swing A** over a gap that is too wide to jump → landing platform →
-**swing B** (longer ropes, bigger arc) over a wider gap → final island with a sandy mound to
-hop and the **finish flag**. Falling softly respawns you at your **last comfortable landing**
-(soft checkpoint), not the level start.
+Nine swings across one continuous route; you can detach mid-air and grab the next swing
+without touching ground (verified S4 → S5 hanging-vine chain).
 
-## What changed in V0.2
+## The route (~110 units, sections A–E)
 
-### Character
-- Duck rebuilt from smooth swept surfaces (lathe body profile + custom tapered-tube neck +
-  lathe beak halves) — no visible primitive stacks, no flat shading on the character
-- MeshPhysicalMaterial with light clearcoat for a soft toy sheen; separate materials for
-  body, wings, beak, feet and eyes; collider still fully independent of the visual mesh
-- More animation: run lean/bounce with neck counter-sway, wing flaps in the air, wings hold
-  the ropes while sitting, legs lag the pendulum while swinging, pumping rocks the neck,
-  landing head-nod spring, curiosity head-tilts while idle, happy squint + wing flaps on
-  victory, wind streaks during fast flight, sparkle burst on grab
+| Section | Content |
+|---------|---------|
+| **A — Warm-up** | Safe start meadow, sign, **S1** on a rock pedestal over the first gap (lands even with no pumping), wide landing platform, first checkpoint |
+| **B — Swing rhythm** | **S2** and **S3**, two consecutive on-platform A-frames; light pumping required; momentum-focused gaps |
+| **C — Floating islands** | **S4** pedestal swing down to a low isle, **S5** hanging vine swing over a wide gap (strong S4 releases chain onto it **mid-air**), **S6** up to the high crystal island; alternate jump route to P7 |
+| **D — Fantasy garden** | Drop-jump into the garden (giant flowers, mushrooms, waterfall, pink trees), **S7** garden vine swing, **S8** with the **P9b bonus island** catching strong sends (optional harder route), lanterns |
+| **E — Finish** | **S9** grand finale, pennant arch, flag → completion screen with star count + confetti |
 
-### Level & readability
-- Platforms rebuilt as floating meadow islands: saturated two-tone grass caps with a pale lit
-  rim, warm earth bodies, hanging island bottoms and dark cartoon outlines — nothing shares a
-  color or silhouette with the hills behind them; collision boxes match the visible caps
-- Background rebuilt as deliberate depth layers: soft sun (slow parallax), three rings of
-  progressively paler hills, drifting clouds, and a cloud sea far below the gaps so falling
-  reads as diving into clouds; fog tuned so gameplay islands stay crisp
-- Trees/bushes pushed behind the play plane so they never fight the duck for attention
+Checkpoints: 9 crystal posts — one activates per platform landed; respawning is instant,
+soft-flashed, and keeps collected stars. Quick retry button (top-right) returns to the
+latest checkpoint; PLAY AGAIN (on the completion screen) restarts the whole level.
 
-### Swing feel
-- Classic A-frame playground swing (readable "A" silhouette), warm wood, thicker ropes,
-  per-instance rope length/colors
-- Forgiving grab: 2.1 u radius "magnet" — the seat snaps to the duck's angle on grab; a
-  pulsing ring appears around the seat while in range and the seat does a happy bump
-- Unattended swings settle with a whisper of breeze sway (and no longer freeze mid-air —
-  fixed in V0.2)
-- Swing-aware camera: pulls back slightly and looks down-range while swinging/flying so the
-  landing area is visible before you commit to a release
+## What changed in V0.4
 
-### Systems
-- Two swings with a nearest-grabbable selection; momentum-preserving release retained
-- Soft checkpoint system (fresh landings well inside a platform update the respawn point)
-- Physics fixes: the ground probe no longer eats landing events (dust/sfx/checkpoints fire
-  reliably), and corner forgiveness stops the duck jamming on ledge corners
-- One-shot teaching tips (e.g. "Rock ← → to swing higher" after your first grab)
+### Swing chain system
+- 9 independent swings, each with its own pivot, rope length, damping, grab radius and a
+  **max tangential speed cap** (`maxV`, default 11.5 m/s) so long ropes can't launch rockets
+- **Inelastic angular stops** at ±1.38 rad — no rattle, no energy gain at the limits
+- Released swings **keep settling + breeze sway** (V0.4 fixed released swings never losing
+  energy — they used to spin forever and their seats never came back into grab range)
+- Short re-grab cooldown (0.24 s) only on the swing you just left, so flying past it doesn't
+  re-attach while any other swing stays grabbable for mid-air chains
+- **Ahead-bias grab selection**: while moving, the swing in front of you is preferred over a
+  seat swooping in from behind
+- Release velocity comes from the seat's tangential velocity (preserved through the air,
+  momentum guard intact), plus a small forward kick that rewards well-timed releases
+
+### Feedback & game feel
+- Grab ring + GRAB button, seat bump + sparkles + sfx on grab, gold rope/seat glow while
+  attached, whoosh at the bottom of fast arcs, LET GO prompt, dust + squash on landings
+- Footstep ticks alternate with the run cycle; checkpoint chime; star pickup blip
+- Confetti bursts on star pickup, checkpoint celebrate, and the flag (three bursts)
+
+### Checkpoints, stars, progression
+- 9 explicit checkpoint posts (crystal turns gold when active); activation = landing on the
+  platform, so flying over a post can't skip it
+- 13 optional golden stars placed along verified swing arcs (all 13 collected during the
+  automated full-route run); HUD counter with best-star persistence
+- `localStorage` (`duck-save-v1`) stores `{completed, bestStars}` — nothing else, no accounts
+- Completion screen: star count, best, PLAY AGAIN (full reset)
+
+### Duck animation
+- Jump anticipation (compress-then-rebound), checkpoint celebration (wing flaps + squint +
+  hop wiggle), cute respawn recovery (dizzy wobble + head shake)
+- All V0.2 animation retained: breathing, run cycle, hanging pose, pendulum tilt, wing
+  flaps, landing nod, curiosity tilts, victory celebration, wind streaks
+- Collider remains fully independent of all visual animation
+
+### World
+- 12 floating islands + 2 rock pedestals + 1 bonus island, cartoon outlines, lit rims
+- Fantasy garden: oversized flowers, dotted mushrooms, pink whimsical trees, pastel rocks,
+  a shimmering waterfall with falling droplets, hanging lanterns, glowing pulsing crystals
+- Finish arch with pennants; background extended (more hills/clouds) for the longer route
+
+### Camera
+- Velocity-smoothed look-ahead (anticipates launches and fast flights, no oscillation)
+- Pull-back while swinging, down-range look while airborne — landing targets stay visible
 
 ## Project structure
 
 ```
 src/components/game/
-  GameCanvas.tsx            React shell: canvas + touch UI + tips + overlays
+  GameCanvas.tsx            React shell: canvas + touch UI + HUD + tips + completion screen
   engine/
-    Game.ts                 orchestrator: loop, controller, camera, multi-swing logic, debug hook
+    Game.ts                 orchestrator: loop, controller, camera, swing chain, checkpoints,
+                            stars, confetti, persistence callbacks, debug/test hook
     Physics.ts              AABB world, substepped axis-separated collision + corner forgiveness
     Input.ts                unified keyboard/touch input with edge-triggered presses
     Duck.ts                 smooth swept-surface duck + all procedural animation
-    Swing.ts                A-frame swing, pendulum, grab ring, breeze sway
-    Level.ts                floating-island platforms, decor, mound, flag (deterministic layout)
+    Swing.ts                frame + hanging swings, pendulum (stops, caps, damping), feedback
+    Level.ts                sections A–E: platforms, swings, checkpoints, stars, decor
     Background.ts           sky, sun, layered hills, cloud sea, drifting clouds
-    Sfx.ts                  WebAudio synth SFX (jump/land/grab/sparkle/release/fall/win) + mute
+    Sfx.ts                  WebAudio synth SFX (step/land/grab/whoosh/release/chime/collect/
+                            sparkle/fall/win) + mute
+scripts/game-tests.js       deterministic in-browser test harness (window.__duck.sim)
 scripts/export-duck.ts      exports the duck to download/duck.glb
-download/screens/           verification screenshots from the automated browser session
+download/screens/           verification screenshots (v4-*)
 ```
 
 ## Android build (Capacitor)
@@ -103,30 +128,53 @@ npx cap open android   # then Build > Generate Signed APK/AAB in Android Studio
 For a quick test without Android Studio, the game is fully playable in mobile Chrome/Firefox;
 add it to the home screen for a fullscreen, app-like experience.
 
-## Actual tests performed (headless browser, agent-driven)
+## Actual tests performed (headless browser, agent-driven, deterministic `sim()` harness)
 
-Screenshots in `download/screens/` (v2-*):
+All via `scripts/game-tests.js` injected into the running page (`window.__T.all()`), plus
+real pointer-event touch tests at 390×844:
 
-1. Idle/run/jump poses with the new character; run speed 4.2 m/s, onGround stable
-2. Run-jump-grab on swing A: momentum converts to pendulum (ω≈2.6 on catch)
-3. Pumping builds ω to 4.4; sim-locked release crosses the 5.2 m gap; landed x≈17.2 on
-   platform 2
-4. Same for the longer swing B (ω 3.8+, release window 0.35–1.05 rad); crossed and flagged
-5. **Full continuous playthrough**: grab A → cross → grab B → cross → mound → flag →
-   `won: true` (v2-18)
-6. Checkpoint system: fresh landings update the respawn point (verified 16.0 / 27.5 / 32.4);
-   falling off a platform respawns there, not at the start
-7. Physics regression fixed and verified: ground-probe landing events fire reliably; ledge
-   corners no longer jam the duck (mound pass works at run speed)
-8. Grab feedback: pulsing ring + GRAB button visible in range (v2-15); ring hides while
-   swinging; LET GO button while swinging (v2-09)
-9. Mobile portrait 390×844: controls sized correctly, island + cloud sea composition (v2-16)
-10. Console clean; ESLint passes; duck.glb re-exported (210 KB)
+1. **Warm-up (§12-1)**: run → jump → grab S1 → pump → release → landed x 16.3 on P2,
+   checkpoint activated, star collected on the flight arc — PASS
+2. **Same swing repeatedly (§12-2)**: grab/release/re-grab S2 three times (cooldown lets the
+   seat settle between) — PASS
+3. **Two different swings (§12-3)**: strong S4 release → **mid-air chain onto hanging S5** →
+   landed on P6 — PASS
+4. **Miss a swing (§12-4)**: ran off the start edge without grabbing → kill plane → respawned
+   at the start with clean state — PASS
+5. **Checkpoint respawn (§12-5)**: activated P3's checkpoint, walked off its edge, respawned
+   exactly at the post (x 25.4), grounded, no stale swing attachment — PASS
+6. **Full route (§12-6)**: all 9 swings + 2 plain jumps in order → flag → `won: true`,
+   **13/13 stars**, 8 checkpoints activated — PASS
+7. **Collectibles (§12-7)**: star counter increments on pickup with burst + sfx — PASS
+8. **Restart (§12-8)**: PLAY AGAIN on the completion screen → spawn, cp −1, stars 0 — PASS
+9. **Touch only (§12-9)**: 390×844 viewport; real pointer tap on JUMP launched the duck
+   (y 2.04); held Move-right ran at 4.2 m/s and coasted down after release; all buttons
+   present within safe areas — PASS
+10. **High speed (§12-10)**: mid-flight screenshot after an S1 release (vx ≈ 9.5) — camera
+    tracks with look-ahead, duck + next platform readable, no errors — PASS
+
+Console clean; ESLint passes.
+
+### Bugs found and fixed during this round
+- **Released swings never settled** (settle was only called while attached) — they spun at
+  cap omega forever and their seats never returned to grab range; settle now runs for all
+  unattended swings every step
+- **Angular stop rattle / pinned deadlock** — the ±1.38 rad clamp now zeroes the pushing
+  omega (inelastic stop)
+- **Rocket launches** — unbounded pumping on long ropes produced 20 m/s releases; every
+  swing now caps tangential speed (maxV 11.5 m/s)
+- **Accidental behind-the-back grabs** — grab selection now prefers the swing ahead of the
+  duck's motion
+- **Checkpoint posts could be overflown** — activation is now per-platform landing
 
 ## Remaining issues / known limitations
 
-- Headless-browser sim time runs below real time (RAF throttling in the sandbox) — real
-  devices run at full 60 fps; all timing-sensitive tests use sim-locked helpers
-- The swing release still wants a modestly well-timed tap (release near the top of the
-  forward arc); the camera pull-back and the tips make this discoverable
-- No gamepad, level progression or music — same scope boundary as V0
+- Headless-browser sim time runs below real time (RAF throttling in the sandbox); real
+  devices run at full 60 fps. All timing-sensitive tests use the deterministic `sim()` hook.
+- No audio beyond the synthesized SFX set (no music), same scope boundary as before.
+- The optional bonus island (P9b) is intentionally hard: it catches near-max S7/S8 sends;
+  missing it costs nothing (P10 follows immediately).
+- Swing creak is implemented as a soft whoosh at the bottom of fast arcs, not a continuous
+  rope creak.
+- Android device testing / performance profiling was NOT performed (no device in sandbox);
+  the Capacitor path above is documented but untested on hardware.

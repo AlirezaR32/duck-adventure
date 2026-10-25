@@ -257,6 +257,7 @@ export class Game {
       const was = b.onGround
       b.vy = Math.max(T.maxFall, b.vy + T.gravity * dt)
       this.world.move(b, dt, was)
+      for (const s of this.swings) s.settle(dt, this.time)
       this.syncDuck(dt)
       this.updateCamera(dt)
       return
@@ -314,6 +315,11 @@ export class Game {
     } else {
       b.vx = moveToward(b.vx, 0, (b.onGround ? T.groundDecel : T.airDrag) * dt)
     }
+
+    // unattended swings keep settling/swaying between grabs — released
+    // swings must actually lose energy, otherwise they spin forever and
+    // their seats never come back within grab range
+    for (const s of this.swings) s.settle(dt, this.time)
 
     // ---- jump with coyote time + input buffer (no double jumps) ----
     this.coyote = b.onGround ? T.coyote : Math.max(0, this.coyote - dt)

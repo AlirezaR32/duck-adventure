@@ -214,7 +214,14 @@ export class Swing {
     this.omega += (-(gravity / this.L) * Math.sin(this.theta) - 0.22 * this.omega + torque) * dt
     this.omega = Math.max(-this.maxOmega, Math.min(this.maxOmega, this.omega))
     this.theta += this.omega * dt
-    this.theta = Math.max(-1.38, Math.min(1.38, this.theta))
+    // inelastic angular stop: no rattle, no energy gain at the limits
+    if (this.theta > 1.38) {
+      this.theta = 1.38
+      if (this.omega > 0) this.omega = 0
+    } else if (this.theta < -1.38) {
+      this.theta = -1.38
+      if (this.omega < 0) this.omega = 0
+    }
     this.place()
   }
 

@@ -56,7 +56,7 @@
     S5: [52.4, 59.8],
     S6: [60.4, 65.0],
     S7: [77.6, 83.2],
-    S8: [87.6, 91.8],
+    S8: [84.4, 91.8], // P10, or the P9b bonus island on strong sends
     S9: [96.0, 103.6],
   }
 
@@ -77,6 +77,13 @@
 
   function crossInner(r, opts) {
     const { startX, jumpAt, omegaTarget, win, land, label } = opts
+    if (opts.isolated !== false) {
+      D.fullReset()
+      D.sim(30)
+    }
+    // let leftover swing motion from earlier legs die down so grabs target
+    // the intended swing (a human player naturally takes this long to walk)
+    simUntil((q) => q.maxSwingOmega < 0.3, 600, label + ': swings settle')
     D.warp(startX, 3.0) // drop in from slightly above the platform
     D.sim(40) // settle on ground
     let s = st()
@@ -120,6 +127,8 @@
   // ---- 2. re-grab the SAME swing repeatedly (§12-2)
   T.regrab = function () {
     const out = { grabs: 0 }
+    D.fullReset()
+    D.sim(30)
     // stand under S2's seat and grab/release it three times
     D.warp(16.8, 2.0)
     D.sim(40)
@@ -153,8 +162,8 @@
     const g = grabInRange(240)
     if (!g || !g.swinging) throw new Error('chain: S4 grab missed ' + j(st()))
     r.events.push('grab S4')
-    simUntil((q) => q.omega >= 3.35, 900, 'chain: pump S4')
-    D.releaseWhen(3.0, 0.6, 0.9)
+    simUntil((q) => q.omega >= 3.2, 900, 'chain: pump S4')
+    D.releaseWhen(2.6, 0.55, 1.1)
     simUntil((q) => !q.swinging, 700, 'chain: release S4')
     r.events.push('released S4 vx=' + st().vx.toFixed(1))
     // fly toward P5/S5 — try to grab S5 while STILL airborne
@@ -276,31 +285,34 @@
     D.fullReset()
     D.sim(30)
     // A
-    log.push(cross({ startX: 0.4, jumpAt: 6.9, omegaTarget: 3.0, win: [0.55, 1.05], land: LAND.S1, label: 'A/S1' }))
+    log.push(cross({ startX: 0.4, jumpAt: 6.9, omegaTarget: 3.0, win: [0.55, 1.05], land: LAND.S1, label: 'A/S1', isolated: false }))
     // B: S2 from P2 (run-through grab), S3 from P3
-    log.push(cross({ startX: 13.4, jumpAt: null, omegaTarget: 2.9, win: [0.6, 1.05], land: LAND.S2, label: 'B/S2' }))
-    log.push(cross({ startX: 23.2, jumpAt: null, omegaTarget: 2.9, win: [0.6, 1.05], land: LAND.S3, label: 'B/S3' }))
+    log.push(cross({ startX: 13.4, jumpAt: null, omegaTarget: 2.9, win: [0.6, 1.05], land: LAND.S2, label: 'B/S2', isolated: false }))
+    log.push(cross({ startX: 23.2, jumpAt: null, omegaTarget: 2.9, win: [0.6, 1.05], land: LAND.S3, label: 'B/S3', isolated: false }))
     // C: S4 (pedestal, jump-down), S5 (hanging), S6 (high rise)
-    log.push(cross({ startX: 34.2, jumpAt: 37.2, omegaTarget: 2.8, win: [0.3, 0.65], land: LAND.S4, label: 'C/S4' }))
-    log.push(cross({ startX: 44.4, jumpAt: 48.0, omegaTarget: 1.9, win: [0.4, 0.7], land: LAND.S5, label: 'C/S5' }))
-    log.push(cross({ startX: 53.0, jumpAt: null, omegaTarget: 3.4, win: [0.7, 1.1], land: LAND.S6, label: 'C/S6' }))
+    log.push(cross({ startX: 34.2, jumpAt: 37.2, omegaTarget: 2.8, win: [0.3, 0.65], land: LAND.S4, label: 'C/S4', isolated: false }))
+    log.push(cross({ startX: 44.4, jumpAt: 48.0, omegaTarget: 1.9, win: [0.4, 0.7], land: LAND.S5, label: 'C/S5', isolated: false }))
+    log.push(cross({ startX: 53.0, jumpAt: null, omegaTarget: 3.4, win: [0.7, 1.1], land: LAND.S6, label: 'C/S6', isolated: false }))
     // D: P7 → P8 plain jump, S7 (hanging), S8
     log.push((function () {
       D.warp(62.6, 4.0)
       D.sim(40)
       D.press('right', true)
-      simUntil((q) => q.x >= 64.0 && q.onGround, 500, 'D: reach P7 edge')
+      simUntil((q) => q.x >= 64.5 && q.onGround, 500, 'D: reach P7 edge')
       tapJump()
       const l = simUntil((q) => q.onGround, 500, 'D: land P8')
       D.press('right', false)
       if (!(l.x >= 67.6 && l.x <= 73.0)) throw new Error('D: P7→P8 jump landed ' + l.x.toFixed(2))
       return { label: 'D/jump', landedX: l.x, ok: true }
     })())
-    log.push(cross({ startX: 68.4, jumpAt: 72.4, omegaTarget: 1.9, win: [0.4, 0.65], land: LAND.S7, label: 'D/S7' }))
-    log.push(cross({ startX: 78.2, jumpAt: null, omegaTarget: 2.7, win: [0.6, 1.0], land: LAND.S8, label: 'D/S8' }))
+    log.push(cross({ startX: 68.4, jumpAt: 72.4, omegaTarget: 1.9, win: [0.4, 0.65], land: LAND.S7, label: 'D/S7', isolated: false }))
+    log.push(cross({ startX: 79.0, jumpAt: null, omegaTarget: 2.7, win: [0.6, 1.0], land: LAND.S8, label: 'D/S8', isolated: false }))
     // E: S9 finale → P11 flag
-    log.push(cross({ startX: 88.2, jumpAt: null, omegaTarget: 2.8, win: [0.65, 1.05], land: LAND.S9, label: 'E/S9' }))
+    log.push(cross({ startX: 88.2, jumpAt: null, omegaTarget: 2.8, win: [0.65, 1.05], land: LAND.S9, label: 'E/S9', isolated: false }))
+    // run the last meters into the flag
+    D.press('right', true)
     simUntil((q) => q.won, 600, 'E: flag')
+    D.press('right', false)
     const s = st()
     return j({ log, won: s.won, stars: s.stars, x: s.x, cp: s.cp })
   }
