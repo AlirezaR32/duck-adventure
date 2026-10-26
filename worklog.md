@@ -191,3 +191,15 @@ Stage Summary:
 - Deliverable: V0.9 at / — complete release shell (menu/pause/settings/completion), generative music, functional persisted settings, hardened saves, Android-grade touch + lifecycle handling, PWA packaging, graceful WebGL fallback; all four regions and physics byte-identical, 20/20 regression green
 - Key decisions: physics untouched (reachability); auto-pause on visibilitychange with explicit resume (autoplay-policy compliant); quality tiers change DPR/shadows/particles only (game plays identically); TWA over Capacitor as the primary Android path (PWA-first, zero wrapper code)
 - Not done (honest): real-device test (no hardware), APK build (no SDK), human playtesting
+
+---
+Task ID: 10
+Agent: main (Z.ai)
+Task: Restore V1.0 RC after sandbox reset + produce handoff zip for the next agent
+
+Work Log:
+- Discovered the sandbox had been RESET between sessions: the V1.0 commit (61e472f), android-build/, toolchain/, all 5 RC scripts, APKs, v10 screenshots, README and worklog updates were gone; tree was back at V0.9 (5740636)
+- Re-applied every V1.0 RC change from the conversation record: next.config.ts NEXT_EXPORT branch, api force-static, scripts/{rc-runner,journey,robustness,perf-snapshot,gen-android-icons}.mjs, README V1.0 sections (this worklog entry re-documents them)
+- Re-verified in THIS sandbox: 20/20 sim suite + 19/19 journey + 3/3 robustness against the production standalone build (one transient 18/19 journey run on the cold dev server was a timing flake; prod run clean)
+- Rebuilt the Android artifact (SDK cmdline-tools → platform 36 + build-tools 35, Temurin JDK 21, Capacitor 8, duck mipmaps, gradlew assembleDebug/assembleRelease)
+- Produced the handoff zip (project source + git history + RC artifacts, excluding node_modules/.next/toolchain) with HANDOFF.md for the next agent

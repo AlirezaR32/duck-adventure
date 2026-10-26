@@ -1,4 +1,4 @@
-# Duck Adventure — V0.9
+# Duck Adventure — V1.0 Release Candidate
 
 A charming, **level-based 2.5D fantasy adventure** starring a smooth, collectible-toy white
 duck, built for mobile (Android-first) play in the browser. The duck matches the supplied
@@ -7,16 +7,13 @@ rounded head, a properly sculpted orange bill, glossy bead eyes with catchlight,
 wings that hug the flank, a perky lifted tail blended into the silhouette, and stubby orange
 legs with webbed feet.
 
-**V0.9 is the release-readiness pass**: the game now has a complete session shell — main
-menu → play → pause → settings → level picker → completion — generative ambient **music**,
-a **settings screen where every control actually works** (SFX/music volume, vibration,
-graphics tier — all persisted), hardened **save integrity** (corrupt data can never crash
-the game), Android-grade **touch robustness** (multi-finger-safe buttons, no stuck inputs,
-safe-area-aware HUD, backgrounding auto-pause), a **PWA manifest + generated launcher
-icons** for the Android packaging path, a graceful **WebGL fallback**, and targeted
-performance work (zero per-frame allocations in the swing renderer, shared-particle
-materials, live graphics tiers). The duck model, animation, physics constants, all four
-regions and their verified reachability are preserved untouched.
+**V1.0 is the release candidate**: the full game was audited, the complete 12-step player
+journey was verified end-to-end (launch → menu → play → run/jump → swing → momentum release →
+land → collect → checkpoint → recover → complete → menu → relaunch with saved data), and the
+**Android APK was actually built** (Capacitor 8 + Android SDK 36: debug APK + unsigned
+release APK in `download/`). No gameplay code needed changing — the V0.9 baseline passed
+every suite first try, so the RC is deliberately a stabilization and packaging release,
+not a feature cycle.
 
 ![screenshots](download/screens/v8/v8-l4-ferry-ring.png)
 
@@ -65,6 +62,48 @@ Replaying a completed region never duplicates rewards — records are best-value
 Every platform, swing, mover, hazard and checkpoint transition in all four regions was
 **reached and verified with the deterministic sim harness** (see Tests). Physics constants
 are byte-identical to V0.7/V0.8 — reachability is untouched.
+
+## What changed in V1.0 (release candidate)
+
+### Audit result — zero gameplay changes required
+The entire engine (11 modules, ~5.7k lines), the session shell and all four level defs
+were re-read and the full 20-scenario sim suite ran **before any change**: 14/14 V0.8
+gameplay + 6/6 V0.9 release-shell, **first try, zero console errors**. Physics, swing
+mechanics, level reachability, checkpoints, hazards, saves and menus were therefore
+**left byte-identical** — the RC freezes the feature set exactly as specified.
+
+### New: Android artifacts actually produced
+- Toolchain installed in-sandbox: Android cmdline-tools → SDK 36 + build-tools 35,
+  Temurin JDK 21 (the preinstalled JRE has no `javac`).
+- **Capacitor 8.5.3** wraps the static export of the game (`NEXT_EXPORT=1 next build`
+  → `out/`, copied to `android-build/www`). App id `com.duckadventure.game`, name
+  "Duck Adventure", versionCode 1 / versionName 1.0, minSdk 24 / target 36,
+  **INTERNET is the only permission**.
+- Stock Capacitor launcher icons replaced with the duck mascot (all densities,
+  round + adaptive foreground/background, `scripts/gen-android-icons.mjs`).
+- Built: `DuckAdventure-v1.0-rc-debug.apk` (4.7 MB) and
+  `DuckAdventure-v1.0-rc-release-unsigned.apk` (3.7 MB) — both verified with
+  `aapt dump badging` and confirmed to contain the game bundle + icons.
+- The static export that ships **inside** the APK passed the full 19/19 player-journey
+  suite served statically — the APK shell is the verified build, not a separate code path.
+
+### New: end-to-end player-journey verification (19 steps)
+`scripts/journey.mjs` (Playwright, 390×844 touch viewport) drives the real shell buttons:
+launch, menu content, PLAY, **run+jump via the actual touch buttons**, swing attach →
+pump to |ω|≥3 → release in the proven window (vx 9.6 at release), landing-zone check,
+star collection, checkpoint activation, fall recovery to the checkpoint, level completion
+through the second swing, win overlay, NEXT LEVEL, pause menu (Resume/Restart/Main Menu),
+return to menu, and **relaunch persistence** (menu shows CONTINUE · LEVEL 2; changed SFX
+volume survives reload; save payload sane). Plus 3 robustness probes: corrupt save →
+boots to menu without crashing, corrupt settings → defaults without crashing, and all
+PWA assets 200 with no 4xx/5xx during boot.
+
+### Minor (non-gameplay)
+- `next.config.ts`: optional static-export branch (`NEXT_EXPORT=1`) for the APK shell;
+  the default standalone web build is unchanged. `src/app/api/route.ts` marked
+  `force-static` (export compatibility only).
+- New scripts: `rc-runner.mjs` (suite runner), `journey.mjs`, `robustness.mjs`,
+  `perf-snapshot.mjs`, `gen-android-icons.mjs`.
 
 ## What changed in V0.9
 
@@ -148,38 +187,59 @@ public/manifest.webmanifest  PWA manifest (NEW)
 public/icon-*.png et al      generated launcher icons (NEW)
 scripts/game-tests-v6.js     deterministic L1–L3 harness (window.__T, sim-based)
 scripts/game-tests-v8.js     L4 scenarios + crossLevel4 (extends T.all)
-scripts/game-tests-v9.js     NEW: pause/resume, respawn-while-paused, quality tiers,
+scripts/game-tests-v9.js     pause/resume, respawn-while-paused, quality tiers,
                              level-switch leak loop, multi-touch buttons, stuck-tap guard
-scripts/gen-icons.mjs        NEW: sharp-based launcher icon generation
+scripts/rc-runner.mjs        NEW: playwright runner for the 20-scenario sim suite
+scripts/journey.mjs          NEW: 12-step player-journey verification (19 checks)
+scripts/robustness.mjs       NEW: corrupt-save/settings + asset-availability probes
+scripts/perf-snapshot.mjs    NEW: per-tier draw-call/triangle/heap snapshot
+scripts/gen-icons.mjs        sharp-based launcher icon generation
+scripts/gen-android-icons.mjs NEW: APK mipmap duck icons (all densities)
 scripts/export-duck.ts       exports the duck to download/duck.glb
-download/screens/v9/         V0.9 verification screenshots
+download/screens/v10/        V1.0 journey screenshots
+download/DuckAdventure-*.apk NEW: built Android artifacts (debug + unsigned release)
 ```
 
-## Android packaging
+## Android packaging (PROVEN — artifacts built in this repo)
 
-### TWA (recommended — no engine wrapper needed)
-The game is a PWA, so the Android app is a Trusted Web Activity generated from the manifest:
+The RC ships a **Capacitor 8** wrapper; both APKs were built by the exact commands below
+(`android-build/` is committed; the SDK/JDK live under `toolchain/`, not in git).
 
+### Rebuild the APK from scratch
 ```bash
-bunx @bubblewrap/cli init --manifest https://YOUR-HOST/manifest.webmanifest
-# prompts: application id (e.g. com.duckadventure.app), version code/name (1 / 1.0.0),
-# display mode standalone, theme color #fff2d2 — then:
-bunx @bubblewrap/cli build          # produces app-release-signed.apk (+ .aab via --skipPwaValidation)
-bunx @bubblewrap/cli install        # adb install to a connected device
+# 0) one-time toolchain (already done in this sandbox: toolchain/android-sdk + toolchain/jdk21)
+curl -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+unzip cmdtools.zip && mkdir -p toolchain/android-sdk/cmdline-tools && mv cmdline-tools toolchain/android-sdk/latest
+yes | toolchain/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+toolchain/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+# 1) static export of the game (the APK web shell)
+NEXT_EXPORT=1 npx next build && rm -rf android-build/www && cp -r out android-build/www
+
+# 2) sync + build (JAVA_HOME must be a full JDK — the sandbox JRE has no javac)
+cd android-build/android
+echo "sdk.dir=$PWD/../../toolchain/android-sdk" > local.properties
+export ANDROID_HOME=$PWD/../../toolchain/android-sdk JAVA_HOME=$PWD/../../toolchain/jdk21
+./gradlew assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease        # → app-release-unsigned.apk (needs a keystore + signing config to ship)
 ```
 
-Notes: `display: standalone`, `orientation: any` (portrait verified), icons 192/512 +
-maskable, **no permissions**, `theme_color`/`background_color` #fff2d2. Version
-code/versionName live in the Bubblewrap `twa-manifest.json` per release. Debug builds:
-`bunx @bubblewrap/cli build --skipPwaValidation --manifest ... ` with the debug keystore.
+### Configuration as built
+| Item | Value |
+|---|---|
+| applicationId | `com.duckadventure.game` |
+| App name | Duck Adventure |
+| versionCode / versionName | 1 / 1.0 |
+| minSdk / target / compile | 24 (Android 7.0+) / 36 / 36 |
+| Permissions | `INTERNET` only (+ a self-scoped dynamic-receiver permission Capacitor generates) |
+| Orientation | unrestricted (`android:screenOrientation` unset — the game adapts; portrait 390×844 is the verified layout) |
+| Launcher icon | duck mascot, all densities (ic_launcher / round / adaptive foreground+background) |
+| Offline | fully playable offline (assets local; only the hello-world `/api` stub exists) |
 
-### Capacitor (alternative)
-```bash
-bun add -d @capacitor/cli && bun add @capacitor/core @capacitor/android
-npx cap init "Duck Adventure" com.duckadventure.app --web-dir=.next/static
-bun run build && npx cap add android
-npx cap open android   # Build > Generate Signed APK/AAB
-```
+To sign for distribution: generate a keystore, add a `signingConfigs.release` block to
+`android-build/android/app/build.gradle`, and set the version bump there. Store upload
+was **not** performed (no authorization, per the RC brief). A Bubblewrap/TWA route also
+remains possible from the hosted PWA, but Capacitor is the path that was actually built.
 
 Without any wrapper the game is fully playable in mobile Chrome/Firefox; "Add to Home
 Screen" gives the fullscreen app-like experience (manifest-driven).
@@ -252,22 +312,32 @@ Screen" gives the fullscreen app-like experience (manifest-driven).
 
 ## Performance measurement (honest numbers)
 
-- Headless sandbox rendering is **software-rasterized** (SwiftShader): measured ~4 fps at
-  1280×720 — fill-rate-bound CPU rendering, **not representative of any real device GPU**;
-  no real-device measurement was possible in this sandbox.
-- Scene budget at the mobile viewport 390×844 (Balanced): **L1 94 / L4 101 draw calls**,
-  ~22.6–22.7k triangles, 1024² shadow map, DPR ≤ 1.75, particles ≤ 60. High tier adds a
-  2048² shadow map and DPR ≤ 2. Battery tier: shadows off, DPR ≤ 1, particles ≤ 40,
-  **−19 draw calls** measured.
-- Draw-call deltas vs V0.8 at the same viewport: **slightly better** (101 vs 104 on L4),
-  confirming the shell additions cost nothing in the scene.
+- Headless sandbox rendering is **software-rasterized** (SwiftShader): fill-rate-bound CPU
+  rendering, **not representative of any real device GPU**; no real-device measurement was
+  possible in this sandbox (no hardware).
+- V1.0 snapshot (`scripts/perf-snapshot.mjs`, device-independent metrics):
+  - **Desktop 1280×720, High:** L1–L4 = 110–132 draw calls, ~24k triangles
+  - **Mobile 390×844, Balanced:** L1–L4 = 95–109 dc, ~22.6k tris (unchanged vs V0.9 budget)
+  - **Mobile 390×844, Battery:** 67–82 dc, ~14k tris (shadows off — the big win on weak GPUs)
+- **Memory:** `performance.memory.usedJSHeapSize` 23.4 MB → 23.4 MB across 40 level
+  transitions (no detectable heap drift).
 
-## Remaining issues / known limitations
+## Remaining issues / known limitations (V1.0-RC, honest)
 
-- **No Android device testing was performed** (no device/SDK in the sandbox — `gradle`,
-  `sdkmanager` and `ANDROID_HOME` are absent; only `java` exists). The TWA commands above
-  are documented but **unexecuted**; no APK was produced or claimed. Real-device fps,
-  touch feel and notch behavior remain unverified on hardware.
+- **The APKs were built but never run on real hardware** — the sandbox has no device, no
+  `adb` target and no emulator. What IS verified: the APK badging (package/name/version/
+  permissions/icon) and that the exact web bundle inside the APK passes the full 19/19
+  player journey. What is NOT verified: real-GPU fps, touch latency, notch behavior,
+  lifecycle under real Android memory pressure. The debug APK is the artifact to sideload
+  for the first real-device check.
+- **The improved duck model has NOT been delivered** — no replacement model arrived in
+  this cycle (`upload/` contains only the original reference photo). The integrated
+  character remains the procedural collectible-figure duck **v4** (also exported to
+  `download/duck.glb` as fallback/reference). If a replacement model arrives, integrate it
+  behind validation (format/scale/orientation/animation-compat) and keep v4 as the
+  fallback until then.
+- **Release APK is unsigned** — it needs a keystore + signing config before distribution;
+  no store upload was performed (no authorization).
 - Feel-tuning judgments are based on screenshots and sim review, **not human playtest
   sessions**.
 - Music is a single gentle generative loop — no per-region themes or stingers (deliberate

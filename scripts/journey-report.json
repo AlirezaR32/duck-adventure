@@ -1,0 +1,97 @@
+[
+  {
+    "step": "1 launch",
+    "ok": true,
+    "detail": "page loaded, __duck ready"
+  },
+  {
+    "step": "2 menu has PLAY/LEVELS/SETTINGS",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "step": "3 start level",
+    "ok": true,
+    "detail": "L1 onGround=true"
+  },
+  {
+    "step": "4 run+jump",
+    "ok": true,
+    "detail": "vx=4.2 vy=1.2 landed=true x=5.9"
+  },
+  {
+    "step": "8a collect star",
+    "ok": true,
+    "detail": "stars 0→1"
+  },
+  {
+    "step": "5 swing attach",
+    "ok": true,
+    "detail": "grabbed, pumped to |ω|≥3.0 (proven window)"
+  },
+  {
+    "step": "6 momentum release",
+    "ok": true,
+    "detail": "released vx=9.61"
+  },
+  {
+    "step": "7 landed on platform",
+    "ok": true,
+    "detail": "landed x=18.69 (zone 17.8–25.8), cp=0"
+  },
+  {
+    "step": "8b checkpoint set",
+    "ok": true,
+    "detail": "cp=0 at x=20.2"
+  },
+  {
+    "step": "9 fall recovery → checkpoint",
+    "ok": true,
+    "detail": "respawned at x=21.5 cp=0"
+  },
+  {
+    "step": "10 level complete",
+    "ok": true,
+    "detail": "won at x=34.3 stars=5"
+  },
+  {
+    "step": "10 win overlay UI",
+    "ok": true,
+    "detail": "overlay buttons present"
+  },
+  {
+    "step": "11a next level loads",
+    "ok": true,
+    "detail": "levelIndex=1 won=false"
+  },
+  {
+    "step": "11b pause menu",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "step": "11c back to menu",
+    "ok": true,
+    "detail": "menu rendered, no stale pause overlay"
+  },
+  {
+    "step": "12a save persists across relaunch",
+    "ok": true,
+    "detail": "menu: CONTINUE · LEVEL 2"
+  },
+  {
+    "step": "12b settings persist",
+    "ok": true,
+    "detail": "{\"muted\":false,\"sfxVol\":0.3,\"musicVol\":0.6,\"haptics\":true,\"quality\":\"balanced\"}"
+  },
+  {
+    "step": "12c save payload sane",
+    "ok": true,
+    "detail": "{\"unlocked\":2,\"best\":{\"meadow\":{\"completed\":true,\"bestStars\":5,\"bestTime\":8.4833"
+  },
+  {
+    "step": "no page errors during journey",
+    "ok": true,
+    "detail": "clean"
+  }
+]

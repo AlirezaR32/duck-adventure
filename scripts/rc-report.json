@@ -1,0 +1,298 @@
+{
+  "v8": {
+    "l1_full": {
+      "ok": true,
+      "ms": 525,
+      "detail": {
+        "log": [
+          "hop@10.39",
+          "S1→18.69"
+        ],
+        "won": true,
+        "stars": 5,
+        "x": 34.27325595798458,
+        "cp": 0,
+        "level": 0
+      }
+    },
+    "l1_checkpoint": {
+      "ok": true,
+      "ms": 1309,
+      "detail": {
+        "cpBefore": 0,
+        "cpAfter": 0,
+        "x": 21.5,
+        "atCheckpoint": true
+      }
+    },
+    "l2_full": {
+      "ok": true,
+      "ms": 1447,
+      "detail": {
+        "log": [
+          "S1→14.98",
+          "S2→29.92",
+          "S3→44.10",
+          "S4→53.27"
+        ],
+        "won": true,
+        "stars": 3,
+        "x": 64.29214775756725,
+        "cp": 1,
+        "level": 1
+      }
+    },
+    "l2_chain": {
+      "ok": true,
+      "ms": 2377,
+      "detail": {
+        "events": [
+          "grab S3",
+          "released S3 vx=9.1",
+          "MID-AIR CHAIN onto S4 @x=44.7"
+        ],
+        "chained": true,
+        "landedX": 52.8662729430542,
+        "ok": true
+      }
+    },
+    "l3_movers": {
+      "ok": true,
+      "ms": 1408,
+      "detail": {
+        "m1": "ok",
+        "landedP3": 25.833696659546902
+      }
+    },
+    "l3_checkpoint": {
+      "ok": true,
+      "ms": 1427,
+      "detail": {
+        "cpBefore": 1,
+        "cpAfter": 1,
+        "x": 49.2,
+        "atCheckpoint": true
+      }
+    },
+    "l3_full": {
+      "ok": true,
+      "ms": 1457,
+      "detail": {
+        "log": [
+          "S1→15.02",
+          "M1→25.84",
+          "S2→39.64",
+          "S3→47.83",
+          "phase 1",
+          "phase 2",
+          "phase 3",
+          "phase 4",
+          "M2→60.6",
+          "phase 5",
+          "phase 6",
+          "phase 7",
+          "S4→67.1",
+          "phase 8",
+          "phase 9"
+        ],
+        "won": true,
+        "stars": 3,
+        "x": 70.67910390136986,
+        "cp": 1,
+        "level": 2
+      }
+    },
+    "crossLevel4": {
+      "ok": true,
+      "ms": 3100,
+      "detail": {
+        "l1won": true,
+        "l4clean": true,
+        "backClean": true,
+        "reloadClean": true
+      }
+    },
+    "resetLoop": {
+      "ok": true,
+      "ms": 2904,
+      "detail": {
+        "loops": 6,
+        "ok": true
+      }
+    },
+    "l4_part1": {
+      "ok": true,
+      "ms": 9048,
+      "detail": {
+        "part": 1,
+        "log": [
+          "hop@9.27",
+          "starsAfterHop=1",
+          "S1→21.16",
+          "S2→34.74"
+        ],
+        "x": 34.74473459232366,
+        "cp": 0,
+        "stars": 3,
+        "hazards": 1
+      }
+    },
+    "l4_full": {
+      "ok": true,
+      "ms": 1324,
+      "detail": {
+        "log": [
+          "hop@9.27",
+          "starsAfterHop=1",
+          "S1→21.16",
+          "S2→34.74",
+          "burr hopped @40.5",
+          "ph1",
+          "onPad@40.4",
+          "ph2",
+          "ph3",
+          "ph4",
+          "P4@50.7",
+          "ph5",
+          "ph6",
+          "S3 grabbed",
+          "ph7",
+          "ph8",
+          "MID-AIR CHAIN onto S4 @63.7",
+          "ph9",
+          "ph10",
+          "P5@72.2",
+          "ph13",
+          "ph14",
+          "S5 grabbed",
+          "ph15",
+          "ph16",
+          "FINALE CHAIN onto S6 @84.2",
+          "ph17",
+          "ph18",
+          "S6→94.9",
+          "ph21",
+          "ph22"
+        ],
+        "won": true,
+        "stars": 6,
+        "x": 97.11328764462701,
+        "cp": 2,
+        "level": 3,
+        "chained": true,
+        "chainedS6": true
+      }
+    },
+    "l4_hazard": {
+      "ok": true,
+      "ms": 1448,
+      "detail": {
+        "cpBefore": 0,
+        "safeStand": true,
+        "pricked": true,
+        "respawnedAtCP": true
+      }
+    },
+    "l4_checkpoint": {
+      "ok": true,
+      "ms": 1724,
+      "detail": {
+        "cpBefore": 2,
+        "cpAfter": 2,
+        "x": 72.5,
+        "atCheckpoint": true
+      }
+    },
+    "l4_shortcut": {
+      "ok": true,
+      "ms": 1348,
+      "detail": {
+        "events": [
+          "isle reached with window [2,0.5,0.62]"
+        ],
+        "attempts": [
+          {
+            "window": [
+              2,
+              0.5,
+              0.62
+            ],
+            "landedX": 82.7,
+            "landedY": 4.89
+          }
+        ],
+        "ok": true
+      }
+    }
+  },
+  "v9": {
+    "v9_pauseSwing": {
+      "ok": true,
+      "ms": 430,
+      "detail": {
+        "log": [
+          "omega=2.41"
+        ],
+        "ok": true
+      }
+    },
+    "v9_pauseRespawn": {
+      "ok": true,
+      "ms": 875,
+      "detail": {
+        "ok": true,
+        "x": 0.4
+      }
+    },
+    "v9_quality": {
+      "ok": true,
+      "ms": 816,
+      "detail": {
+        "ok": true,
+        "battery": {
+          "shadows": false,
+          "dpr": 1
+        },
+        "high": {
+          "dpr": 1
+        }
+      }
+    },
+    "v9_levelLoop": {
+      "ok": true,
+      "ms": 1263,
+      "detail": {
+        "ok": true,
+        "hops": 8,
+        "log": [
+          "L1:ok",
+          "L3:ok",
+          "L2:ok",
+          "L4:ok",
+          "L4:ok",
+          "L1:ok",
+          "L4:ok",
+          "L2:ok"
+        ]
+      }
+    },
+    "v9_multiTouch": {
+      "ok": true,
+      "ms": 3314,
+      "detail": {
+        "ok": true,
+        "vxWhileHeld": -4.2,
+        "vxAfterLift": -4.2,
+        "vxReleased": 0
+      }
+    },
+    "v9_hudPrompt": {
+      "ok": true,
+      "ms": 1536,
+      "detail": {
+        "ok": true
+      }
+    }
+  },
+  "consoleErrors": []
+}
