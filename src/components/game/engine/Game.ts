@@ -760,7 +760,7 @@ export class Game {
     } else if (b.vx < -0.25) {
       this.duck.facing = -1
     }
-    this.duck.root.position.set(b.x, b.y, 0)
+    this.duck.root.position.set(b.x, b.y - b.hh, 0)
     // highest surface below the duck — feeds the contact shadow and
     // gives the player a readable landing cue over gaps (movers included)
     let groundY = -8

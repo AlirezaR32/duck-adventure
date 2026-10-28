@@ -567,7 +567,7 @@ export class Duck {
     footGeo.rotateX(-Math.PI / 2)
     for (const zs of [0.145, -0.145]) {
       const hip = new THREE.Group()
-      hip.position.set(0.03, 0.28, zs)
+      hip.position.set(0.03, 0.208, zs)
       const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.12, 6, 12), this.matFeet)
       thigh.position.set(0, -0.08, 0)
       thigh.castShadow = true
