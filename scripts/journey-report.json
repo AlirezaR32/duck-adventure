@@ -17,7 +17,7 @@
   {
     "step": "4 run+jump",
     "ok": true,
-    "detail": "vx=4.2 vy=1.2 landed=true x=5.9"
+    "detail": "vx=4.2 peakVy=1.2 landed=true x=5.7"
   },
   {
     "step": "8a collect star",
@@ -87,7 +87,7 @@
   {
     "step": "12c save payload sane",
     "ok": true,
-    "detail": "{\"unlocked\":2,\"best\":{\"meadow\":{\"completed\":true,\"bestStars\":5,\"bestTime\":8.4833"
+    "detail": "{\"unlocked\":2,\"best\":{\"meadow\":{\"completed\":true,\"bestStars\":5,\"bestTime\":8.4666"
   },
   {
     "step": "no page errors during journey",

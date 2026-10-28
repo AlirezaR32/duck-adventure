@@ -1,0 +1,11 @@
+{
+  "appId": "com.duckadventure.game",
+  "appName": "Duck Adventure",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

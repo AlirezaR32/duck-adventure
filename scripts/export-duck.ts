@@ -7,8 +7,12 @@
 
 import * as THREE from 'three'
 import { writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { Duck } from '../src/components/game/engine/Duck'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Minimal FileReader shim for bun/node (GLTFExporter assembles binary chunks
 // through FileReader.readAsArrayBuffer; there are no textures in this model).
@@ -50,7 +54,7 @@ exporter.parse(
   scene,
   (result) => {
     const buffer = result as ArrayBuffer
-    const out = '/home/z/my-project/download/duck.glb'
+    const out = join(__dirname, '..', 'download', 'duck.glb')
     writeFileSync(out, Buffer.from(buffer))
     console.log(`duck.glb written: ${(buffer.byteLength / 1024).toFixed(1)} KB -> ${out}`)
   },

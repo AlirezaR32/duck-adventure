@@ -141,6 +141,7 @@ const REGION_ACCENT: Record<string, { text: string; dot: string }> = {
   isles: { text: 'text-teal-500', dot: 'bg-teal-400' },
   canyon: { text: 'text-orange-400', dot: 'bg-orange-400' },
   garden: { text: 'text-violet-400', dot: 'bg-violet-400' },
+  hollow: { text: 'text-indigo-400', dot: 'bg-indigo-400' },
 }
 
 const QUALITY_LABEL: Record<QualityTier, string> = {

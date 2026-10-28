@@ -36,7 +36,7 @@ import {
   waterfall,
 } from './LevelKit'
 
-import type { HazardDef } from './LevelKit'
+import type { HazardDef, OrbitHazardDef } from './LevelKit'
 
 export interface PlatDef {
   x1: number
@@ -65,7 +65,7 @@ export interface LevelDef {
   hint: string
   /** Fantasy region identity (intro card + level picker). */
   region: string
-  theme: 'meadow' | 'isles' | 'canyon' | 'garden'
+  theme: 'meadow' | 'isles' | 'canyon' | 'garden' | 'hollow'
   spawnX: number
   flagX: number
   killY: number
@@ -76,6 +76,8 @@ export interface LevelDef {
   checkpoints: CheckpointDef[]
   stars: { x: number; y: number }[]
   hazards?: HazardDef[]
+  /** Airborne orbiting hazards (Region E's wisp swarm) — see LevelKit.wispSwarm. */
+  wisps?: OrbitHazardDef[]
   buildDecor: (kit: Kit) => void
 }
 
@@ -428,4 +430,132 @@ const L4: LevelDef = {
   },
 }
 
-export const LEVELS: LevelDef[] = [L1, L2, L3, L4]
+// ============================ Level 5 — Starlit Hollow ============================
+//
+// V2 addition. A fifth and final region: a deep-indigo night glade lit by
+// firefly lanterns and glowing crystal. Reuses every proven building block
+// (climb swing, long vine, a mid-air 2-swing chain, a walk-on drifting
+// stepping-stone, checkpoints, stars, a two-stage finale) and adds ONE
+// genuinely new mechanic: the wisp swarm (LevelKit.wispSwarm) — an airborne
+// hazard that drifts on an elliptical orbit (x AND y) instead of the thorn
+// burr's ground-level back-and-forth sweep, so crossing it safely means
+// reading its current position and timing a jump through the gap in its
+// loop, not just running past it.
+//
+// Geometry below mirrors L4's verified gap sizes (same deltas between
+// platform edges, swing x and mover center) rather than guessing fresh
+// numbers, then was walked start-to-finish with the debug sim harness
+// (see worklog) before any test scenario was written against it.
+
+const L5: LevelDef = {
+  id: 'hollow',
+  name: 'Starlit Hollow',
+  subtitle: 'The night chapter',
+  hint: 'Watch the wisp swarm drift — time your jump through the gap in its loop.',
+  region: 'Region E — Starlit Hollow',
+  theme: 'hollow',
+  spawnX: 0.4,
+  flagX: 97.0,
+  killY: -8,
+  platforms: [
+    { x1: -3.4, x2: 6.6, top: 0 }, // home glade, lantern-lit
+    { x1: 9.0, x2: 12.6, top: 0.4 }, // teaching hop (2.4u gap, matches L4's proven teaching hop)
+    { x1: 18.3, x2: 26.5, top: 1.0 }, // high hollow (S1 climb reward, CP1)
+    { x1: 32.6, x2: 41.0, top: 0.1 }, // wide hollow — the wisp swarm drifts here (matches L4's P3 height so the walk-on height gap to the stepping-stone stays the same)
+    { x1: 49.0, x2: 54.0, top: 0.85 }, // stepping-stone landing (CP2; wide left margin so the hop off the pad always lands past the checkpoint's +0.3u activation margin)
+    { x1: 60.0, x2: 64.0, top: -0.3 }, // safe catch isle under the chain zone
+    { x1: 69.0, x2: 77.3, top: 1.25 }, // wide hollow (CP3, S5 launch edge)
+    { x1: 82.6, x2: 84.8, top: 4.1 }, // OPTIONAL shortcut isle (expert early S5 release, skips S6)
+    { x1: 87.8, x2: 98.2, top: 0.6 }, // starlit grove + flag
+  ],
+  movers: [
+    // drifting moonlit stepping-stone across the hollow gap — same proven
+    // walk-on geometry as L4's ferry (top sits 0.02 above P4's edge).
+    { cx: 44.4, top: 0.12, w: 3.0, motion: { axis: 'x', amp: 3.0, speed: 0.8, phase: 0 } },
+  ],
+  pedestals: [{ x: 15.6, top: -0.3 }],
+  swings: [
+    { x: 15.6, type: 'frame', baseY: -0.3, L: 3.2, pivotH: 4.1, range: 2.3 }, // S1 climb
+    { x: 27.0, type: 'hanging', pivotY: 7.4, L: 4.8, range: 2.4 }, // S2 long vine
+    { x: 56.8, type: 'frame', baseY: -0.4, L: 3.3, pivotH: 4.2, range: 2.3 }, // S3 → chain…
+    { x: 64.8, type: 'hanging', pivotY: 7.0, L: 4.6, range: 2.4 }, // …onto S4
+    // S5 finale vine 1 — pump hard, release at mid-arc and CHAIN mid-air
+    // onto S6 (mirrors L4's proven double-vine finale, shifted -0.4)
+    { x: 77.8, type: 'hanging', pivotY: 7.8, L: 4.9, range: 2.4 },
+    // S6 finale gate swing — short ropes put its seat on the S5 flight line
+    { x: 85.6, type: 'hanging', pivotY: 7.5, L: 3.2, range: 2.4 },
+  ],
+  checkpoints: [
+    { x: 22.0, y: 1.0, plat: 2 },
+    { x: 52.0, y: 0.85, plat: 4 },
+    { x: 73.0, y: 1.25, plat: 6 },
+  ],
+  stars: [
+    { x: 8.0, y: 2.4 }, // teaching hop apex
+    { x: 18.6, y: 2.3 }, // S1 climb arc (post-release ascent)
+    { x: 20.2, y: 2.4 }, // S1 climb arc (apex, just before landing descent)
+    { x: 29.5, y: 3.6 }, // S2 arc
+    { x: 44.4, y: 1.8 }, // the stepping-stone ride
+    { x: 59.5, y: 2.6 }, // mid-air chain zone
+    { x: 66.5, y: 3.2 }, // S4 arc
+    { x: 91.5, y: 3.8 }, // finale arc
+  ],
+  wisps: [
+    // the new hazard: an elliptical airborne orbit, x 35.2–37.8 / y 0.5–1.8,
+    // slow enough to read (≈6.3s period) — wait for the low point to pass,
+    // or time a jump through the high point.
+    { x: 36.5, y: 1.15, radiusX: 1.3, radiusY: 0.65, speed: 1.0, phase: 0 },
+  ],
+  buildDecor(kit) {
+    startSign(kit, 1.7, 0)
+    tree(kit, 3.2, -5.0, 1.05)
+    tree(kit, 6.0, -4.6, 0.9)
+    lantern(kit, 2.4, 0, -1.1, 0.9)
+    lantern(kit, 5.6, 0, -0.8, 1.0)
+    mushroom(kit, 4.4, 0, -0.95, 0.8)
+    bush(kit, 5.6, 0, -1.3, 0.9)
+    // teaching hop
+    crystal(kit, 10.8, 0.4, -1.0, 0.75, kit.theme.crystal)
+    // high hollow (S1 reward, CP1)
+    bigFlower(kit, 20.1, 1.0, -1.15, 1.05, kit.theme.leafPink)
+    lantern(kit, 22.9, 1.0, -0.8, 1.0)
+    crystal(kit, 24.9, 1.0, -0.95, 0.9, kit.theme.crystalGold)
+    tree(kit, 19.6, -5.0, 1.0, true)
+    // wide hollow — wisp swarm zone, lit by a ring of lanterns so the
+    // hazard's orbit always reads against a bright backdrop
+    lantern(kit, 33.4, 0.1, -0.85, 0.95)
+    lantern(kit, 39.6, 0.1, -0.8, 0.9)
+    crystal(kit, 36.0, 0.1, -1.2, 1.0, kit.theme.crystal)
+    mushroom(kit, 34.6, 0.1, -1.0, 0.85)
+    // stepping-stone crossing + ring gate
+    ringGate(kit, 44.4, 3.1, 1.7)
+    floatingRock(kit, 46.4, 4.6, -8.5, 0.9)
+    floatingRock(kit, 41.4, 5.4, -10.5, 1.15)
+    // stepping-stone landing (CP2)
+    lantern(kit, 51.4, 0.85, -0.8, 0.95)
+    mushroom(kit, 53.2, 0.85, -0.95, 0.8)
+    // chain zone
+    crystal(kit, 61.2, -0.3, -1.15, 1.0, kit.theme.crystalGold)
+    floatingRock(kit, 62.8, 3.6, -7.5, 0.85)
+    // wide hollow before the finale (CP3)
+    bigFlower(kit, 70.6, 1.25, -1.15, 1.05, kit.theme.leafPinkLight)
+    tree(kit, 74.4, -5.4, 1.1)
+    lantern(kit, 76.2, 1.25, -0.8, 0.9)
+    ropeBridge(kit, 70.2, 2.65, 77.0, 2.45)
+    // finale: double-vine chain threads the ring gate (mirrors L4's grand
+    // finale decor, shifted -0.4 to match the geometry shift)
+    crystal(kit, 83.8, 4.1, -1.1, 0.85, kit.theme.crystal) // marks the optional shortcut isle
+    ringGate(kit, 90.8, 5.3, 1.6)
+    floatingRock(kit, 85.2, 6.6, -9.5, 1.1)
+    floatingRock(kit, 88.2, 5.6, -11, 0.9)
+    // starlit grove celebration
+    bigFlower(kit, 90.6, 0.6, -1.2, 1.15, kit.theme.leafPink)
+    bigFlower(kit, 96.2, 0.6, -1.35, 0.95, kit.theme.flowerC)
+    lantern(kit, 94.8, 0.6, -0.85, 1.05)
+    lantern(kit, 97.2, 0.6, -0.7, 0.9)
+    crystal(kit, 97.9, 0.6, -1.1, 1.15, kit.theme.crystal)
+    tree(kit, 90.2, -5.4, 1.05, true)
+  },
+}
+
+export const LEVELS: LevelDef[] = [L1, L2, L3, L4, L5]

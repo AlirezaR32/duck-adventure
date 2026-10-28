@@ -2,7 +2,7 @@
   "v8": {
     "l1_full": {
       "ok": true,
-      "ms": 525,
+      "ms": 479,
       "detail": {
         "log": [
           "hop@10.39",
@@ -17,7 +17,7 @@
     },
     "l1_checkpoint": {
       "ok": true,
-      "ms": 1309,
+      "ms": 1462,
       "detail": {
         "cpBefore": 0,
         "cpAfter": 0,
@@ -27,7 +27,7 @@
     },
     "l2_full": {
       "ok": true,
-      "ms": 1447,
+      "ms": 1387,
       "detail": {
         "log": [
           "S1→14.98",
@@ -44,7 +44,7 @@
     },
     "l2_chain": {
       "ok": true,
-      "ms": 2377,
+      "ms": 2228,
       "detail": {
         "events": [
           "grab S3",
@@ -52,13 +52,13 @@
           "MID-AIR CHAIN onto S4 @x=44.7"
         ],
         "chained": true,
-        "landedX": 52.8662729430542,
+        "landedX": 52.866272943054206,
         "ok": true
       }
     },
     "l3_movers": {
       "ok": true,
-      "ms": 1408,
+      "ms": 1337,
       "detail": {
         "m1": "ok",
         "landedP3": 25.833696659546902
@@ -66,7 +66,7 @@
     },
     "l3_checkpoint": {
       "ok": true,
-      "ms": 1427,
+      "ms": 1374,
       "detail": {
         "cpBefore": 1,
         "cpAfter": 1,
@@ -76,7 +76,7 @@
     },
     "l3_full": {
       "ok": true,
-      "ms": 1457,
+      "ms": 1424,
       "detail": {
         "log": [
           "S1→15.02",
@@ -104,7 +104,7 @@
     },
     "crossLevel4": {
       "ok": true,
-      "ms": 3100,
+      "ms": 3020,
       "detail": {
         "l1won": true,
         "l4clean": true,
@@ -114,7 +114,7 @@
     },
     "resetLoop": {
       "ok": true,
-      "ms": 2904,
+      "ms": 2858,
       "detail": {
         "loops": 6,
         "ok": true
@@ -122,7 +122,7 @@
     },
     "l4_part1": {
       "ok": true,
-      "ms": 9048,
+      "ms": 8116,
       "detail": {
         "part": 1,
         "log": [
@@ -139,7 +139,7 @@
     },
     "l4_full": {
       "ok": true,
-      "ms": 1324,
+      "ms": 1290,
       "detail": {
         "log": [
           "hop@9.27",
@@ -185,7 +185,7 @@
     },
     "l4_hazard": {
       "ok": true,
-      "ms": 1448,
+      "ms": 1346,
       "detail": {
         "cpBefore": 0,
         "safeStand": true,
@@ -195,7 +195,7 @@
     },
     "l4_checkpoint": {
       "ok": true,
-      "ms": 1724,
+      "ms": 1675,
       "detail": {
         "cpBefore": 2,
         "cpAfter": 2,
@@ -205,7 +205,7 @@
     },
     "l4_shortcut": {
       "ok": true,
-      "ms": 1348,
+      "ms": 1349,
       "detail": {
         "events": [
           "isle reached with window [2,0.5,0.62]"
@@ -228,7 +228,7 @@
   "v9": {
     "v9_pauseSwing": {
       "ok": true,
-      "ms": 430,
+      "ms": 422,
       "detail": {
         "log": [
           "omega=2.41"
@@ -238,7 +238,7 @@
     },
     "v9_pauseRespawn": {
       "ok": true,
-      "ms": 875,
+      "ms": 879,
       "detail": {
         "ok": true,
         "x": 0.4
@@ -246,7 +246,7 @@
     },
     "v9_quality": {
       "ok": true,
-      "ms": 816,
+      "ms": 730,
       "detail": {
         "ok": true,
         "battery": {
@@ -260,7 +260,7 @@
     },
     "v9_levelLoop": {
       "ok": true,
-      "ms": 1263,
+      "ms": 883,
       "detail": {
         "ok": true,
         "hops": 8,
@@ -278,7 +278,7 @@
     },
     "v9_multiTouch": {
       "ok": true,
-      "ms": 3314,
+      "ms": 3692,
       "detail": {
         "ok": true,
         "vxWhileHeld": -4.2,
@@ -288,9 +288,55 @@
     },
     "v9_hudPrompt": {
       "ok": true,
-      "ms": 1536,
+      "ms": 1488,
       "detail": {
         "ok": true
+      }
+    }
+  },
+  "v11": {
+    "l5_full": {
+      "ok": true,
+      "ms": 957,
+      "detail": {
+        "log": [
+          "hop@9.20",
+          "S1->21.50 cp=0",
+          "S2->34.30",
+          "crossedP3@40.04",
+          "onPad@39.81",
+          "edge@47.38 mover->50.13 cp=1",
+          "MID-AIR CHAIN onto S4 @62.8",
+          "S4->71.79 cp=2",
+          "FINALE CHAIN onto S6 @83.7",
+          "S6->94.46 cp=2",
+          "WON x=96.77 stars=8/8"
+        ],
+        "won": true,
+        "stars": 8,
+        "x": 96.76698526816399,
+        "cp": 2,
+        "level": 4
+      }
+    },
+    "l5_checkpoint": {
+      "ok": true,
+      "ms": 1571,
+      "detail": {
+        "cpBefore": 1,
+        "cpAfter": 1,
+        "x": 52,
+        "atCheckpoint": true
+      }
+    },
+    "l5_hazard": {
+      "ok": true,
+      "ms": 1221,
+      "detail": {
+        "cpBefore": 0,
+        "safeStand": true,
+        "hit": true,
+        "respawnedAtCP": true
       }
     }
   },

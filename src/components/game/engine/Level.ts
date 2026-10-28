@@ -21,6 +21,7 @@ import {
   starGeometry,
   THEMES,
   thornBurr,
+  wispSwarm,
   type HazardRT,
   type Kit,
   type MoverBuild,
@@ -69,7 +70,10 @@ export function buildLevelRuntime(scene: THREE.Scene, world: PhysicsWorld, def: 
   for (const p of def.platforms) island(kit, p)
   for (const ped of def.pedestals) pedestal(kit, ped.x, ped.top)
   const movers = def.movers.map((m) => movingPlatform(kit, m.cx, m.top, m.w, m.motion))
-  const hazards: HazardRT[] = (def.hazards ?? []).map((h) => thornBurr(kit, h))
+  const hazards: HazardRT[] = [
+    ...(def.hazards ?? []).map((h) => thornBurr(kit, h)),
+    ...(def.wisps ?? []).map((h) => wispSwarm(kit, h)),
+  ]
 
   // ---- left boundary wall (invisible) ----
   world.add(def.spawnX - 3.8, 2, 0.8, 10)

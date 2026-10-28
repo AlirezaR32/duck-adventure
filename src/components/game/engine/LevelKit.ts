@@ -22,7 +22,7 @@ import { roundedBoxGeo } from './Swing'
 // ============================ themes ============================
 
 export interface LevelTheme {
-  name: 'meadow' | 'isles' | 'canyon' | 'garden'
+  name: 'meadow' | 'isles' | 'canyon' | 'garden' | 'hollow'
   grassTop: number
   grassRim: number
   grassSide: number
@@ -155,6 +155,35 @@ export const THEMES: Record<LevelTheme['name'], LevelTheme> = {
     flowerC: 0xc0a2ff,
     mushroomCap: 0xe89ac8,
     vine: 0x8fc4a8,
+  },
+  // Region E — starlit night glade: deep indigo dusk, firefly-gold glow
+  // accents on dusky teal-blue grass. Platforms stay saturated against the
+  // night sky so the white duck still reads clearly after dark.
+  hollow: {
+    name: 'hollow',
+    grassTop: 0x3f6b8a,
+    grassRim: 0x6fa8c2,
+    grassSide: 0x2d4f68,
+    dirt: 0x5c4a78,
+    dirtDeep: 0x463a5c,
+    outline: 0x201a34,
+    tuft: 0x4a7e92,
+    wood: 0x4a3a52,
+    woodLight: 0xcba8d8,
+    leaf: 0x4a7e92,
+    leafLight: 0x72aec2,
+    leafDeep: 0x3a6478,
+    leafPink: 0xc89ae0,
+    leafPinkLight: 0xe0c0f2,
+    crystal: 0xffe28a,
+    crystalGold: 0xffd166,
+    rockA: 0x6a5c8a,
+    rockB: 0x4a7e92,
+    flowerA: 0xfff0d2,
+    flowerB: 0xffb85c,
+    flowerC: 0xc89ae0,
+    mushroomCap: 0xffb85c,
+    vine: 0x4a7e92,
   },
 }
 
@@ -769,6 +798,73 @@ export function thornBurr(kit: Kit, def: HazardDef): HazardRT {
   })
 
   return { def, group: g, r: 0.62 }
+}
+
+/** An airborne hazard that drifts on an elliptical orbit (x AND y), unlike
+ * the thorn burr's ground-level back-and-forth patrol. */
+export interface OrbitHazardDef {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  speed: number
+  phase?: number
+}
+
+/**
+ * Starlit wisp swarm — Region E's new hazard. A small cluster of glowing
+ * motes orbiting a dark thorned core on an ellipse that crosses the route,
+ * so passing it safely means reading its current position and timing a
+ * swing release or jump through the gap in its loop, not just dodging a
+ * straight-line sweep like the thorn burr. A soft pulsing aura (billboard
+ * ring, always facing the camera) stands in for the thorn burr's
+ * ground-projected danger ring since this hazard is airborne.
+ */
+export function wispSwarm(kit: Kit, def: OrbitHazardDef): HazardRT {
+  const { root } = kit
+  const g = new THREE.Group()
+
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x2e2650,
+    emissive: 0x241c40,
+    emissiveIntensity: 0.6,
+    roughness: 0.55,
+    metalness: 0,
+    flatShading: true,
+  })
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 1), coreMat)
+  g.add(core)
+
+  const moteGeo = new THREE.SphereGeometry(0.07, 10, 8)
+  const moteMat = new THREE.MeshBasicMaterial({ color: 0xffe28a, fog: false })
+  const motes: THREE.Mesh[] = []
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(moteGeo, moteMat)
+    motes.push(m)
+    g.add(m)
+  }
+
+  // soft aura halo — always faces the camera (billboard via lookAt in anims)
+  const auraMat = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.3, fog: false })
+  const aura = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.58, 22), auraMat)
+  g.add(aura)
+
+  root.add(g)
+  const phase = def.phase ?? 0
+  kit.anims.push((t) => {
+    const cx = def.x + Math.cos(t * def.speed + phase) * def.radiusX
+    const cy = def.y + Math.sin(t * def.speed + phase) * def.radiusY
+    g.position.set(cx, cy, 0)
+    core.rotation.y = t * 1.1
+    core.rotation.x = t * 0.7
+    auraMat.opacity = 0.22 + Math.sin(t * 3.6 + phase) * 0.12
+    for (let i = 0; i < motes.length; i++) {
+      const a = t * 2.2 + (i / motes.length) * Math.PI * 2
+      motes[i].position.set(Math.cos(a) * 0.3, Math.sin(a * 1.3) * 0.22, Math.sin(a) * 0.3)
+    }
+  })
+
+  return { def: { x: def.x, y: def.y, travel: 0, speed: 0 }, group: g, r: 0.52 }
 }
 
 const UP = new THREE.Vector3(0, 1, 0)

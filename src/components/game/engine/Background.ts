@@ -22,7 +22,7 @@ interface Cloud {
   speed: number
 }
 
-export type BgTheme = 'meadow' | 'isles' | 'canyon' | 'garden'
+export type BgTheme = 'meadow' | 'isles' | 'canyon' | 'garden' | 'hollow'
 
 interface BgPalette {
   sky: [string, string, string, string]
@@ -94,6 +94,23 @@ const PALETTES: Record<BgTheme, BgPalette> = {
     cloudSeaColor: [0xfff4fa, 0xf6e2f4],
     cloudTint: 0xfffafc,
     cloudRows: 18,
+  },
+  // Region E — night glade: deep indigo sky fading to a dusky rose horizon,
+  // a pale moon instead of a sun, cool blue-violet hill rings and a
+  // deep-violet cloud sea so the firefly-gold platform accents glow.
+  hollow: {
+    sky: ['#1f2452', '#3a3f82', '#6a5fae', '#b48ad0'],
+    fog: 0x3a3f82,
+    sun: 0xfff0c2,
+    sunY: 8.8,
+    rings: [
+      { color: 0x343a6e, y: -4.4, z: -26, spread: 16, r: 12, sy: 0.3, n: 11 },
+      { color: 0x44487e, y: -3.4, z: -19, spread: 15.5, r: 10, sy: 0.32, n: 11 },
+      { color: 0x524a86, y: -3.0, z: -12.5, spread: 15, r: 6.5, sy: 0.38, n: 10 },
+    ],
+    cloudSeaColor: [0x5a5296, 0x443c7a],
+    cloudTint: 0x6a62a6,
+    cloudRows: 14,
   },
 }
 

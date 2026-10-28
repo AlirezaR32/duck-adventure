@@ -7,7 +7,7 @@
  */
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { chromium } = require('/home/z/.npm-global/lib/node_modules/playwright/index.js')
+const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright/index.js')
 
 const BASE = process.argv[2] || 'http://localhost:3000'
 const results = []

@@ -11,7 +11,7 @@ import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 
 const require = createRequire(import.meta.url)
-const { chromium } = require('/home/z/.npm-global/lib/node_modules/playwright/index.js')
+const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright/index.js')
 
 const BASE = process.argv[2] || 'http://localhost:3000'
 const V8 = [
@@ -20,6 +20,7 @@ const V8 = [
   'l4_checkpoint', 'l4_shortcut',
 ]
 const V9 = ['v9_pauseSwing', 'v9_pauseRespawn', 'v9_quality', 'v9_levelLoop', 'v9_multiTouch', 'v9_hudPrompt']
+const V11 = ['l5_full', 'l5_checkpoint', 'l5_hazard']
 
 const browser = await chromium.launch()
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } })
@@ -33,13 +34,13 @@ console.log('open', BASE)
 await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 })
 await page.waitForFunction(() => !!window.__duck, null, { timeout: 30000 })
 
-for (const f of ['scripts/game-tests-v6.js', 'scripts/game-tests-v8.js', 'scripts/game-tests-v9.js']) {
+for (const f of ['scripts/game-tests-v6.js', 'scripts/game-tests-v8.js', 'scripts/game-tests-v9.js', 'scripts/game-tests-v11.js']) {
   await page.addScriptTag({ content: readFileSync(f, 'utf8') })
 }
 console.log('harness injected:',
   await page.evaluate(() => typeof window.__duck + '/' + typeof window.__T))
 
-const report = { v8: {}, v9: {}, consoleErrors }
+const report = { v8: {}, v9: {}, v11: {}, consoleErrors }
 
 async function runSuite(kind, names) {
   for (const n of names) {
@@ -73,14 +74,21 @@ await page.waitForSelector('button[aria-label="Move left"]', { timeout: 10000 })
 console.log('shell: playing screen active')
 
 await runSuite('v9', V9)
+await runSuite('v11', V11)
 
 const p8 = V8.filter((n) => report.v8[n]?.ok).length
 const p9 = V9.filter((n) => report.v9[n]?.ok).length
-console.log(`\n=== SUITE: ${p8}/${V8.length} v8  +  ${p9}/${V9.length} v9  =  ${p8 + p9}/${V8.length + V9.length} ===`)
+const p11 = V11.filter((n) => report.v11[n]?.ok).length
+console.log(
+  `\n=== SUITE: ${p8}/${V8.length} v8  +  ${p9}/${V9.length} v9  +  ${p11}/${V11.length} v11  =  ` +
+    `${p8 + p9 + p11}/${V8.length + V9.length + V11.length} ===`,
+)
 if (consoleErrors.length) {
   console.log('console errors during run:', consoleErrors.length)
   console.log([...new Set(consoleErrors)].slice(0, 10).join('\n'))
 }
 require('node:fs').writeFileSync('scripts/rc-report.json', JSON.stringify(report, null, 2))
 await browser.close()
-process.exit(p8 + p9 === V8.length + V9.length && consoleErrors.length === 0 ? 0 : 1)
+process.exit(
+  p8 + p9 + p11 === V8.length + V9.length + V11.length && consoleErrors.length === 0 ? 0 : 1,
+)

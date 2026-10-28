@@ -10,7 +10,7 @@
  */
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { chromium } = require('/home/z/.npm-global/lib/node_modules/playwright/index.js')
+const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright/index.js')
 
 const BASE = process.argv[2] || 'http://localhost:3000'
 const SHOT = 'download/screens/v10'
@@ -105,12 +105,17 @@ const sRun = await D()
 await page.locator('button[aria-label="Jump"]').dispatchEvent('pointerdown', { pointerId: 8, isPrimary: false, bubbles: true })
 await sleep(150)
 await page.locator('button[aria-label="Jump"]').dispatchEvent('pointerup', { pointerId: 8, bubbles: true })
-await sleep(250)
-const sAir = await D()
 await rightBtn.dispatchEvent('pointerup', { pointerId: 7, bubbles: true })
-await sleep(1600)
-const sLand = await D()
-ok('4 run+jump', sRun.vx > 1 && sAir.vy > 1 && sLand.onGround, `vx=${sRun.vx.toFixed(1)} vy=${sAir.vy.toFixed(1)} landed=${sLand.onGround} x=${sLand.x.toFixed(1)}`)
+// sample through the whole flight — a single RAF-timed sample can land after the apex
+let sAir = { vy: -99 }, sLand = null
+for (let i = 0; i < 24; i++) {
+  await sleep(100)
+  const s = await D()
+  if (s.vy > sAir.vy) sAir = s
+  if (s.onGround && i > 2) { sLand = s; break }
+}
+if (!sLand) { await sleep(1200); sLand = await D() }
+ok('4 run+jump', sRun.vx > 1 && sAir.vy > 1 && sLand.onGround, `vx=${sRun.vx.toFixed(1)} peakVy=${sAir.vy.toFixed(1)} landed=${sLand.onGround} x=${sLand.x.toFixed(1)}`)
 
 // 8a ─ Collect a star (before any swinging — star 1 sits at the teaching jump)
 const starGrab = await page.evaluate(() => {

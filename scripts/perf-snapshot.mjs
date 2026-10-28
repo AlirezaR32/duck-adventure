@@ -5,7 +5,7 @@
  */
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
-const { chromium } = require('/home/z/.npm-global/lib/node_modules/playwright/index.js')
+const { chromium } = require('/home/claude/.npm-global/lib/node_modules/playwright/index.js')
 
 const BASE = process.argv[2] || 'http://localhost:3000'
 const browser = await chromium.launch()
@@ -15,7 +15,7 @@ async function measure(viewport, tier, label) {
   await page.goto(BASE, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => !!window.__duck, null, { timeout: 30000 })
   const rows = []
-  for (let lv = 0; lv < 4; lv++) {
+  for (let lv = 0; lv < 5; lv++) {
     const r = await page.evaluate(([lv, tier]) => {
       const D = window.__duck
       D.loadLevel(lv)
@@ -42,7 +42,7 @@ await page.waitForFunction(() => !!window.__duck, null, { timeout: 30000 })
 const heap0 = (await page.evaluate(() => performance.memory?.usedJSHeapSize ?? -1))
 await page.evaluate(() => {
   const D = window.__duck
-  for (let i = 0; i < 40; i++) { D.loadLevel(i % 4); D.sim(10) }
+  for (let i = 0; i < 40; i++) { D.loadLevel(i % 5); D.sim(10) }
 })
 await page.waitForTimeout(2500)
 const heap1 = (await page.evaluate(() => performance.memory?.usedJSHeapSize ?? -1))

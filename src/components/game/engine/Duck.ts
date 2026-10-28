@@ -27,7 +27,7 @@ import * as THREE from 'three'
 const C = {
   bodyHi: 0xfdfaf2, // warm toy white — crown / upper surfaces
   bodyLo: 0xede2cb, // deeper cream — belly / underside shading
-  wing: 0xf2ebdb, // folded wing tone (a hair deeper, for readability)
+  wing: 0xf7f1e2, // folded wing tone — close to body, reads as a soft crease
   beakHi: 0xffb054, // bright orange-yellow, base
   beakLo: 0xf0871c, // deeper orange, tip
   feet: 0xf59b25, // warm orange legs + webbed feet
@@ -48,15 +48,16 @@ function clampF(v: number, lo: number, hi: number): number {
 }
 
 function bodyMat(): THREE.MeshPhysicalMaterial {
-  // V0.7: silkier toy finish — a touch rougher, softer coat so highlights
-  // read as velvet sheen instead of plastic glaze under the bright sun
+  // V2: the reference photo reads as a soft, warm, almost-matte plush/resin
+  // finish (diffuse highlights, no hard specular glint on the body) rather
+  // than a glossy ceramic glaze — roughness up, clearcoat down from V0.7.
   return new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     vertexColors: true,
-    roughness: 0.58,
+    roughness: 0.68,
     metalness: 0,
-    clearcoat: 0.26,
-    clearcoatRoughness: 0.62,
+    clearcoat: 0.14,
+    clearcoatRoughness: 0.7,
   })
 }
 
@@ -132,16 +133,20 @@ function latheProfile(prof: [number, number][], segs = 36): THREE.LatheGeometry 
  *    of the body itself (perky, tucked, smooth — no separate lump)
  */
 function sculptTorso(geo: THREE.BufferGeometry): void {
+  // V2 reference pass: the photo reference is a compact, rounded "egg" body
+  // — much less fore-aft stretch than v4's 1.38x, and a tucked, blunt rear
+  // instead of a perky lifted tail-line (the rear lift is now subtle, just
+  // enough to avoid a flat dead-end).
   const p = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i)
-    let x = v.x * 1.38
+    let x = v.x * 1.16
     const y = v.y
-    const z = v.z * 0.92
+    const z = v.z * 0.96
     x += smooth(0.05, 0.42, x) * smooth(0.5, 0.08, y) * 0.06 // chest fill
     const rear = smooth(0.02, -0.55, x)
-    const a = -0.34 * rear // lift the rear
+    const a = -0.12 * rear // gentle tuck, not a perky lift
     const py = y - 0.36
     const ca = Math.cos(a)
     const sa = Math.sin(a)
@@ -360,98 +365,105 @@ export class Duck {
     torso.castShadow = true
     this.bodyGrp.add(torso)
 
-    // ---- small perky tail tip, half-embedded in the lifted rear ----
+    // ---- V2: a small blunt tail bump, mostly tucked into the rounded rear
+    // — the reference photo shows almost no visible tail, just a soft tuck
+    // where the body closes off, not a raised perky point ----
     const tailGeo = latheProfile(
       [
         [0.001, 0.0],
-        [0.075, 0.03],
-        [0.105, 0.09],
-        [0.096, 0.16],
-        [0.062, 0.225],
-        [0.026, 0.265],
-        [0.001, 0.28],
+        [0.055, 0.022],
+        [0.078, 0.06],
+        [0.07, 0.105],
+        [0.044, 0.148],
+        [0.018, 0.175],
+        [0.001, 0.185],
       ],
       22,
     )
-    paintY(tailGeo, 0.0, 0.28)
-    this.tailGrp.position.set(-0.37, 0.62, 0)
-    this.tailGrp.rotation.z = 0.45 // tip points back-up
+    paintY(tailGeo, 0.0, 0.185)
+    this.tailGrp.position.set(-0.3, 0.52, 0)
+    this.tailGrp.rotation.z = 0.2 // mostly tucked, just a soft bump back
     const tail = new THREE.Mesh(tailGeo, this.matBody)
     tail.scale.setScalar(0.95)
     tail.castShadow = true
     this.tailGrp.add(tail)
     this.bodyGrp.add(this.tailGrp)
 
-    // ---- folded wings (V0.7: almond shapes that HUG the flank) ----
-    // The old patch sat high on the back where the body curves away, so its
-    // edges floated in the air. The new wing sits lower on the vertical part
-    // of the flank, is rolled to follow the surface and tips back-down
-    // toward the tail like a real folded wing.
+    // ---- folded wings (V2: soft puffy plumage, not a hard applique) ----
+    // The reference photo shows almost no distinct wing edge — just a soft
+    // crease in the plumage barely readable against the body. The shape is
+    // smaller, rounder (fewer sharp direction changes) and nearly flush —
+    // shallow extrude depth + a lighter, closer-to-body tone — so it reads
+    // as a gentle fold rather than a stuck-on leaf shape.
     const wingShape = new THREE.Shape()
-    wingShape.moveTo(0.2, 0.02)
-    wingShape.quadraticCurveTo(0.12, 0.12, -0.02, 0.14)
-    wingShape.quadraticCurveTo(-0.18, 0.145, -0.3, 0.05)
-    wingShape.quadraticCurveTo(-0.38, -0.02, -0.34, -0.06)
-    wingShape.quadraticCurveTo(-0.22, -0.1, -0.08, -0.09)
-    wingShape.quadraticCurveTo(0.06, -0.075, 0.2, 0.02)
+    wingShape.moveTo(0.14, 0.02)
+    wingShape.quadraticCurveTo(0.09, 0.09, -0.02, 0.1)
+    wingShape.quadraticCurveTo(-0.14, 0.1, -0.22, 0.04)
+    wingShape.quadraticCurveTo(-0.27, -0.01, -0.24, -0.04)
+    wingShape.quadraticCurveTo(-0.15, -0.065, -0.05, -0.06)
+    wingShape.quadraticCurveTo(0.04, -0.05, 0.14, 0.02)
     const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
-      depth: 0.05,
+      depth: 0.026,
       bevelEnabled: true,
-      bevelThickness: 0.02,
-      bevelSize: 0.022,
-      bevelSegments: 3,
+      bevelThickness: 0.016,
+      bevelSize: 0.02,
+      bevelSegments: 4,
       curveSegments: 10,
     })
-    wingGeo.translate(0, 0, -0.025)
-    // a second, smaller covert layer gives the folded wing real depth
+    wingGeo.translate(0, 0, -0.013)
+    // a second, smaller covert layer — kept subtle, almost the same tone
     const covertGeo = wingGeo.clone()
     for (const zs of [0.3, -0.3]) {
       const g = new THREE.Group()
-      g.position.set(0.1, 0.67, zs)
+      g.position.set(0.08, 0.63, zs)
       const w = new THREE.Mesh(wingGeo, this.matWing)
-      w.scale.set(0.95, 0.95, 0.9)
+      w.scale.set(0.85, 0.85, 0.85)
       w.castShadow = true
       // wrap around the flank + roll the top edge toward the back line
-      w.rotation.y = zs > 0 ? -0.26 : 0.26
-      w.rotation.x = zs > 0 ? 0.07 : -0.07
+      w.rotation.y = zs > 0 ? -0.3 : 0.3
+      w.rotation.x = zs > 0 ? 0.08 : -0.08
       g.add(w)
       const w2 = new THREE.Mesh(covertGeo, this.matWing)
-      w2.scale.set(0.58, 0.58, 0.75)
-      w2.position.set(0.05, -0.015, zs > 0 ? 0.02 : -0.02)
-      w2.rotation.y = zs > 0 ? -0.3 : 0.3
+      w2.scale.set(0.5, 0.5, 0.65)
+      w2.position.set(0.04, -0.012, zs > 0 ? 0.015 : -0.015)
+      w2.rotation.y = zs > 0 ? -0.32 : 0.32
       g.add(w2)
-      g.rotation.z = -0.18 // tips slope down toward the tail
+      g.rotation.z = -0.1 // only a slight downward slope — mostly flush
       this.wings.push(g)
       this.bodyGrp.add(g)
     }
 
-    // ---- long elegant neck (V0.7): a gentle S-sweep that FLOWS out of the
-    // chest — the tube now starts deeper inside the body with a flared base
-    // ring so the throat line is continuous (no collar crease), sweeps a
-    // touch back low, then arcs forward into the head like the ornament ----
-    this.neckGrp.position.set(0.24, 0.7, 0)
-    this.neckGrp.rotation.z = -0.05
+    // ---- V2: short, thick neck straight from the reference photo ----
+    // The photo shows the head sitting close and low on the body — a short,
+    // chunky neck, not the long elegant swan-sweep of earlier versions. The
+    // tube still starts deep inside the chest (flared base, no collar
+    // crease) but now covers roughly 2/3 the vertical span and stays
+    // noticeably thicker along its whole length (toy-plush, not slender).
+    this.neckGrp.position.set(0.21, 0.66, 0)
+    this.neckGrp.rotation.z = -0.04
     const neck = new THREE.Mesh(
       taperedTube(
         [
-          [0.02, -0.3, 0],
-          [0.0, 0.08, 0],
-          [-0.02, 0.3, 0],
-          [0.04, 0.5, 0],
-          [0.12, 0.62, 0],
+          [0.02, -0.22, 0],
+          [0.0, 0.02, 0],
+          [-0.01, 0.16, 0],
+          [0.04, 0.28, 0],
+          [0.1, 0.36, 0],
         ],
-        [0.19, 0.15, 0.118, 0.112, 0.12],
+        [0.21, 0.195, 0.175, 0.165, 0.165],
       ),
       this.matBody,
     )
     neck.castShadow = true
-    paintY(neck.geometry, -0.12, 0.7)
+    paintY(neck.geometry, -0.1, 0.46)
     this.neckGrp.add(neck)
     this.bodyGrp.add(this.neckGrp)
 
-    // ---- head: rounded skull, the neck's slim tube merges deep into it ----
-    this.headGrp.position.set(0.13, 0.63, 0)
-    const skullGeo = new THREE.SphereGeometry(0.24, 28, 22)
+    // ---- head: rounded skull, sitting close on the short neck ----
+    // V2: the reference photo's head reads noticeably large against the
+    // body (toy proportions) — bumped up from 0.24 to 0.26.
+    this.headGrp.position.set(0.11, 0.37, 0)
+    const skullGeo = new THREE.SphereGeometry(0.26, 28, 22)
     skullGeo.scale(1.03, 0.96, 0.98)
     paintY(skullGeo, -0.18, 0.24)
     const skull = new THREE.Mesh(skullGeo, this.matBody)
@@ -477,7 +489,9 @@ export class Duck {
       26,
     )
     beakUpGeo.rotateZ(-Math.PI / 2)
-    beakUpGeo.scale(1, 0.6, 1.32)
+    // V2: bigger, blunter bill to match the reference's big friendly scoop
+    // and the enlarged head.
+    beakUpGeo.scale(1.1, 0.68, 1.38)
     // gentle droop toward the tip
     {
       const p = beakUpGeo.getAttribute('position') as THREE.BufferAttribute
@@ -489,7 +503,7 @@ export class Duck {
     }
     paintX(beakUpGeo, 0.0, 0.21, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
     const beakUp = new THREE.Mesh(beakUpGeo, this.matBeak)
-    beakUp.position.set(0.16, -0.008, 0)
+    beakUp.position.set(0.175, -0.008, 0)
     beakUp.rotation.z = -0.05
     beakUp.castShadow = true
     this.headGrp.add(beakUp)
@@ -507,17 +521,17 @@ export class Duck {
       22,
     )
     beakLoGeo.rotateZ(-Math.PI / 2)
-    beakLoGeo.scale(1, 0.42, 1.08)
+    beakLoGeo.scale(1.1, 0.48, 1.14)
     paintX(beakLoGeo, 0.0, 0.17, new THREE.Color(C.beakHi), new THREE.Color(C.beakLo))
     const beakLo = new THREE.Mesh(beakLoGeo, this.matBeak)
-    beakLo.position.set(0.142, -0.076, 0)
+    beakLo.position.set(0.155, -0.08, 0)
     beakLo.rotation.z = 0.1
     this.headGrp.add(beakLo)
 
     // glossy bead eyes + catchlight (they read at phone size)
-    for (const zs of [0.19, -0.19]) {
+    for (const zs of [0.2, -0.2]) {
       const g = new THREE.Group()
-      g.position.set(0.115, 0.05, zs)
+      g.position.set(0.14, 0.08, zs)
       const bead = new THREE.Mesh(new THREE.SphereGeometry(0.047, 14, 12), this.matEye)
       bead.scale.set(1, 1.28, 0.62)
       const glow = new THREE.Mesh(
